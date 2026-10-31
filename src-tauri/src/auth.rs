@@ -12,7 +12,91 @@ pub mod dpapi {
         CryptProtectData, CryptUnprotectData, CRYPT_INTEGER_BLOB,
     };
 
+    /// Application-specific entropy for DPAPI to prevent same-user unprivileged third-party processes
+    /// from decrypting Vult tokens using default DPAPI calls.
+    const VULT_DPAPI_ENTROPY: &[u8] = b"vult.app.entropy.v1.7f8a9c2e-4b3d-4c89-8d76-5a6b7c8d9e0f";
+
     pub fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
+        let data_in = CRYPT_INTEGER_BLOB {
+            cbData: data.len() as u32,
+            pbData: data.as_ptr() as *mut u8,
+        };
+        let entropy_blob = CRYPT_INTEGER_BLOB {
+            cbData: VULT_DPAPI_ENTROPY.len() as u32,
+            pbData: VULT_DPAPI_ENTROPY.as_ptr() as *mut u8,
+        };
+        let mut data_out = CRYPT_INTEGER_BLOB::default();
+
+        unsafe {
+            CryptProtectData(
+                &data_in,
+                None,
+                Some(&entropy_blob),
+                None,
+                None,
+                0,
+                &mut data_out,
+            )
+            .map_err(|e| format!("DPAPI encryption failed: {}", e))?;
+
+            let slice = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize);
+            let result = slice.to_vec();
+            let _ = LocalFree(Some(HLOCAL(data_out.pbData as _)));
+            Ok(result)
+        }
+    }
+
+    pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
+        let data_in = CRYPT_INTEGER_BLOB {
+            cbData: data.len() as u32,
+            pbData: data.as_ptr() as *mut u8,
+        };
+        let entropy_blob = CRYPT_INTEGER_BLOB {
+            cbData: VULT_DPAPI_ENTROPY.len() as u32,
+            pbData: VULT_DPAPI_ENTROPY.as_ptr() as *mut u8,
+        };
+        let mut data_out = CRYPT_INTEGER_BLOB::default();
+
+        unsafe {
+            // Primary path: decrypt using application-specific entropy
+            let res = CryptUnprotectData(
+                &data_in,
+                None,
+                Some(&entropy_blob),
+                None,
+                None,
+                0,
+                &mut data_out,
+            );
+
+            if res.is_ok() {
+                let slice = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize);
+                let result = slice.to_vec();
+                let _ = LocalFree(Some(HLOCAL(data_out.pbData as _)));
+                return Ok(result);
+            }
+
+            // Fallback path: decrypt legacy token created without entropy
+            CryptUnprotectData(
+                &data_in,
+                None,
+                None,
+                None,
+                None,
+                0,
+                &mut data_out,
+            )
+            .map_err(|e| format!("DPAPI decryption failed: {}", e))?;
+
+            let slice = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize);
+            let result = slice.to_vec();
+            let _ = LocalFree(Some(HLOCAL(data_out.pbData as _)));
+            Ok(result)
+        }
+    }
+
+    #[cfg(test)]
+    pub fn protect_without_entropy(data: &[u8]) -> Result<Vec<u8>, String> {
         let data_in = CRYPT_INTEGER_BLOB {
             cbData: data.len() as u32,
             pbData: data.as_ptr() as *mut u8,
@@ -38,7 +122,8 @@ pub mod dpapi {
         }
     }
 
-    pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
+    #[cfg(test)]
+    pub fn unprotect_without_entropy(data: &[u8]) -> Result<Vec<u8>, String> {
         let data_in = CRYPT_INTEGER_BLOB {
             cbData: data.len() as u32,
             pbData: data.as_ptr() as *mut u8,
@@ -122,14 +207,30 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-fn compute_effective_pass(auth_mode: &str, pin: Option<&str>, password: &str) -> String {
+pub fn compute_legacy_effective_pass(auth_mode: &str, pin: Option<&str>, password: &str) -> String {
     match auth_mode {
         "pin_only" => pin.unwrap_or(password).to_string(),
         "password_only" => password.to_string(),
         _ => {
-            // "pin_and_password" requires both
+            // legacy "pin_and_password" formatted as password:pin
             if let Some(p) = pin {
                 format!("{}:{}", password, p)
+            } else {
+                password.to_string()
+            }
+        }
+    }
+}
+
+pub fn compute_effective_pass(auth_mode: &str, pin: Option<&str>, password: &str) -> String {
+    match auth_mode {
+        "pin_only" => pin.unwrap_or(password).to_string(),
+        "password_only" => password.to_string(),
+        _ => {
+            // "pin_and_password" requires structured unambiguous framing
+            // Format: vult$v1$<pass_len>:<password>$<pin>
+            if let Some(p) = pin {
+                format!("vult$v1${}:{}${}", password.len(), password, p)
             } else {
                 password.to_string()
             }
@@ -302,6 +403,27 @@ impl AuthManager {
                 Ok(true)
             }
             Err(e) => {
+                // Backwards compatibility fallback for pin_and_password vaults created with legacy format "{password}:{pin}"
+                if config.auth_mode == "pin_and_password" {
+                    let legacy_pass = compute_legacy_effective_pass(&config.auth_mode, pin.as_deref(), &password);
+                    if let Ok(mut data) = self.storage.load_vault(legacy_pass.as_bytes(), &self.crypto) {
+                        // Transparently upgrade to structured composite key on disk
+                        if data.settings.pin_length.is_none() && pin.is_some() {
+                            data.settings.pin_length = pin.as_ref().map(|p| p.len());
+                        }
+                        let _ = self.storage.save_vault(&data, effective_pass.as_bytes(), &self.crypto);
+
+                        state.is_unlocked = true;
+                        state.data = Some(data);
+                        state.active_password = Some(effective_pass.into_bytes());
+                        state.active_pin = pin;
+                        state.active_master_pwd = Some(password);
+                        state.failed_attempts = 0;
+                        state.lockout_until = None;
+                        return Ok(true);
+                    }
+                }
+
                 let err_msg = Self::record_failure(&mut state);
                 Err(format!("{} ({})", err_msg, e))
             }
@@ -358,10 +480,12 @@ impl AuthManager {
             let encrypted_token = std::fs::read(&token_path)
                 .map_err(|e| format!("Failed to read Windows Hello token: {}", e))?;
             
-            let decrypted_pwd_bytes = dpapi::unprotect(&encrypted_token)
+            let mut decrypted_pwd_bytes = dpapi::unprotect(&encrypted_token)
                 .map_err(|e| format!("Failed to decrypt Windows Hello token via DPAPI: {}", e))?;
 
-            let effective_pass = String::from_utf8(decrypted_pwd_bytes)
+            let effective_pass_res = String::from_utf8(decrypted_pwd_bytes.clone());
+            decrypted_pwd_bytes.zeroize();
+            let effective_pass = effective_pass_res
                 .map_err(|e| format!("Corrupted token: {}", e))?;
 
             let mut state = self.state.lock().unwrap();
@@ -813,12 +937,13 @@ impl AuthManager {
                 .or(active_pwd)
                 .ok_or_else(|| "Password is required to decrypt this backup file".to_string())?;
 
-            let plaintext = self.crypto
+            let mut plaintext = self.crypto
                 .decrypt_vault(decrypt_pass.as_bytes(), &binary_bytes)
                 .map_err(|e| format!("Failed to decrypt backup: {}", e))?;
 
-            imported = Some(serde_json::from_slice(&plaintext)
-                .map_err(|e| format!("Corrupted vault data in backup: {}", e))?);
+            let parse_res = serde_json::from_slice(&plaintext);
+            plaintext.zeroize();
+            imported = Some(parse_res.map_err(|e| format!("Corrupted vault data in backup: {}", e))?);
         }
 
         let mut vault_data = imported.ok_or_else(|| "Failed to parse imported vault data".to_string())?;
@@ -1321,5 +1446,82 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&temp_dir1);
         let _ = std::fs::remove_dir_all(&temp_dir2);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_dpapi_entropy_isolation_and_fallback() {
+        let secret = b"SecretCredentialRequiringEntropyProtection";
+
+        // 1. Protect with Vult application entropy
+        let protected_with_entropy = dpapi::protect(secret).unwrap();
+
+        // 2. Unprotect with Vult application entropy succeeds
+        let decrypted = dpapi::unprotect(&protected_with_entropy).unwrap();
+        assert_eq!(decrypted, secret);
+
+        // 3. Third-party unprotect without entropy fails to decrypt Vult token
+        let res_no_entropy = dpapi::unprotect_without_entropy(&protected_with_entropy);
+        assert!(res_no_entropy.is_err(), "Generic DPAPI unprotect without entropy must fail");
+
+        // 4. Fallback compatibility: tokens created previously without entropy can still be decrypted
+        let legacy_protected = dpapi::protect_without_entropy(secret).unwrap();
+        let fallback_decrypted = dpapi::unprotect(&legacy_protected).unwrap();
+        assert_eq!(fallback_decrypted, secret);
+    }
+
+    #[test]
+    fn test_composite_key_framing_ambiguity_elimination() {
+        let key1 = compute_effective_pass("pin_and_password", Some("123"), "abc:");
+        let key2 = compute_effective_pass("pin_and_password", Some(":123"), "abc");
+
+        // Under legacy colon-separated format, both would be "abc::123", causing collision
+        let legacy1 = compute_legacy_effective_pass("pin_and_password", Some("123"), "abc:");
+        let legacy2 = compute_legacy_effective_pass("pin_and_password", Some(":123"), "abc");
+        assert_eq!(legacy1, legacy2);
+
+        // Under modern structured framing, they are distinctly encoded and collision-free
+        assert_ne!(key1, key2);
+        assert_eq!(key1, "vult$v1$4:abc:$123");
+        assert_eq!(key2, "vult$v1$3:abc$:123");
+    }
+
+    #[test]
+    fn test_pin_and_password_legacy_vault_unlock_and_transparent_upgrade() {
+        let temp_dir = env::temp_dir().join(format!("vult_legacy_mig_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+
+        let pin = "4567";
+        let pass = "MasterSecret99!";
+        let legacy_key = compute_legacy_effective_pass("pin_and_password", Some(pin), pass);
+        let modern_key = compute_effective_pass("pin_and_password", Some(pin), pass);
+
+        // 1. Manually create and save a legacy vault file on disk using legacy composite key format
+        let mut vault_data = VaultData::default();
+        vault_data.settings.auth_mode = "pin_and_password".to_string();
+        vault_data.settings.pin_length = Some(4);
+        storage.save_vault(&vault_data, legacy_key.as_bytes(), &crypto).unwrap();
+
+        // Verify the file on disk can be decrypted with legacy key but NOT yet with modern key
+        assert!(storage.load_vault(legacy_key.as_bytes(), &crypto).is_ok());
+        assert!(storage.load_vault(modern_key.as_bytes(), &crypto).is_err());
+
+        // 2. Initialize AuthManager and unlock
+        let auth = AuthManager::new(storage, crypto);
+        assert!(auth.unlock(Some(pin.to_string()), pass.to_string()).is_ok());
+        assert!(auth.is_unlocked());
+
+        // 3. Verify that the vault on disk was transparently upgraded to modern structured key
+        let upgraded_load = auth.storage.load_vault(modern_key.as_bytes(), &auth.crypto);
+        assert!(upgraded_load.is_ok(), "Vault must be transparently upgraded to modern structured key");
+
+        // 4. Lock and unlock again with modern key directly
+        auth.lock();
+        assert!(!auth.is_unlocked());
+        assert!(auth.unlock(Some(pin.to_string()), pass.to_string()).is_ok());
+        assert!(auth.is_unlocked());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

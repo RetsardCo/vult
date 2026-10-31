@@ -4,6 +4,7 @@ use directories::ProjectDirs;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use zeroize::Zeroize;
 
 pub const VAULT_FILENAME: &str = "vault.vult";
 pub const CONFIG_FILENAME: &str = "config.json";
@@ -121,10 +122,11 @@ impl StorageManager {
     /// Save encrypted vault using atomic write (write to tmp -> sync -> rename)
     pub fn save_vault(&self, data: &VaultData, password: &[u8], crypto: &CryptoEngine) -> Result<(), StorageError> {
         let vault_path = self.get_vault_path();
-        let plaintext_json = serde_json::to_vec(data)?;
+        let mut plaintext_json = serde_json::to_vec(data)?;
 
         // Encrypt with AES-256-GCM + Argon2id
         let encrypted_bytes = crypto.encrypt_vault(password, &plaintext_json)?;
+        plaintext_json.zeroize();
 
         // Atomic write to avoid file corruption
         let temp_path = vault_path.with_extension("tmp");
@@ -153,9 +155,11 @@ impl StorageManager {
         file.read_to_end(&mut encrypted_bytes)?;
 
         // Decrypt and verify integrity
-        let decrypted_json = crypto.decrypt_vault(password, &encrypted_bytes)?;
+        let mut decrypted_json = crypto.decrypt_vault(password, &encrypted_bytes)?;
 
-        let vault_data: VaultData = serde_json::from_slice(&decrypted_json)?;
+        let vault_data_res: Result<VaultData, serde_json::Error> = serde_json::from_slice(&decrypted_json);
+        decrypted_json.zeroize();
+        let vault_data = vault_data_res?;
         Ok(vault_data)
     }
 
