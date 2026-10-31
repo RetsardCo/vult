@@ -1,0 +1,252 @@
+/* Lock & Auth Screen Styles */
+.auth-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--space-xl);
+  text-align: center;
+  overflow-y: auto;
+}
+
+.auth-header {
+  margin-bottom: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.auth-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #1C3E68 0%, #0F2038 100%);
+  border: 1px solid rgba(10, 132, 255, 0.35);
+  box-shadow: 0 8px 24px rgba(10, 132, 255, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  margin-bottom: var(--space-sm);
+  color: var(--accent);
+}
+
+.auth-title {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+}
+
+.auth-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-top: var(--space-2xs);
+}
+
+/* PIN Indicator Dots */
+.pin-wrapper {
+  margin-bottom: var(--space-lg);
+  width: 100%;
+}
+
+.pin-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-sm);
+}
+
+.pin-dots {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin: var(--space-sm) 0;
+}
+
+.pin-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border);
+  background: transparent;
+  transition: all var(--duration-fast) var(--ease);
+}
+
+.pin-dot.filled {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+  transform: scale(1.15);
+}
+
+/* Numeric Keypad for PIN */
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  width: 240px;
+  margin: 0 auto var(--space-md) auto;
+}
+
+.pin-key {
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease);
+}
+
+.pin-key:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border);
+}
+
+.pin-key:active {
+  background: var(--accent);
+  color: #FFFFFF;
+  transform: scale(0.94);
+}
+
+.pin-key.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* Password Input with Reveal */
+.password-input-group {
+  position: relative;
+  width: 100%;
+  margin-bottom: var(--space-md);
+}
+
+.password-input-group .input-text {
+  padding-right: 40px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+}
+
+.password-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+/* Auth Buttons */
+.auth-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  margin: var(--space-xs) 0;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.btn-win-hello {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  font-weight: 500;
+}
+
+.btn-win-hello:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--text-tertiary);
+}
+
+.auth-error {
+  color: var(--destructive);
+  font-size: var(--font-size-xs);
+  min-height: 18px;
+  margin-top: var(--space-xs);
+  font-weight: 500;
+}
+
+/* Shake Animation */
+.shake {
+  animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes shake {
+  10%, 90% { transform: translate3d(-2px, 0, 0); }
+  20%, 80% { transform: translate3d(4px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+  40%, 60% { transform: translate3d(6px, 0, 0); }
+}
+
+/* Setup Wizard Card */
+.setup-wizard {
+  width: 100%;
+  text-align: left;
+}
+
+.setup-wizard .form-group {
+  margin-bottom: var(--space-sm);
+}
+
+.auth-mode-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+
+.auth-mode-option {
+  padding: 8px 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  transition: all var(--duration-fast) var(--ease);
+}
+
+.auth-mode-option.selected {
+  background: var(--bg-pill-active);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+  font-weight: 600;
+}

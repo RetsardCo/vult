@@ -1,0 +1,16 @@
+{
+  "name": "vult",
+  "version": "1.0.0",
+  "description": "Personal Secret Manager - Local-first encrypted compact desktop app",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

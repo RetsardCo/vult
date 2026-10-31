@@ -1,0 +1,232 @@
+/* Entry View, Details & Editor Styles */
+.entry-scroll-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* Category header badge */
+.entry-meta-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.entry-title-display {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+/* Field Group */
+.field-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.field-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.field-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.field-value {
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  word-break: break-all;
+  font-family: inherit;
+}
+
+.field-value.mono {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.field-value.masked {
+  letter-spacing: 2px;
+  font-family: var(--font-mono);
+}
+
+/* Seed Phrase Word Grid */
+.seed-phrase-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.seed-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.seed-word-pill {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+}
+
+.seed-word-num {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-weight: 600;
+  min-width: 16px;
+}
+
+.seed-word-text {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Recovery Code List */
+.backup-codes-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.backup-codes-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.backup-codes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.backup-code-item {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  transition: all var(--duration-fast) var(--ease);
+}
+
+.backup-code-item.used {
+  opacity: 0.45;
+  background: rgba(30, 30, 32, 0.4);
+  border-color: var(--border-subtle);
+}
+
+.backup-code-item.used .code-text {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+}
+
+.code-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.code-text {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+/* Custom Field Editor Rows */
+.custom-field-row {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  margin-bottom: var(--space-xs);
+}
+
+.custom-field-row .input-text {
+  flex: 1;
+}
+
+/* Category Selection Grid (When adding new entry) */
+.type-picker-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-md);
+  overflow-y: auto;
+}
+
+.type-picker-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease);
+}
+
+.type-picker-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border);
+  transform: translateX(2px);
+}
+
+.type-picker-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.type-picker-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.type-picker-title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.type-picker-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}

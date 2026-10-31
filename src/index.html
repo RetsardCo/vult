@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=400, height=620, initial-scale=1.0, user-scalable=no">
+  <title>Vult</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/lock-screen.css">
+  <link rel="stylesheet" href="styles/dashboard.css">
+  <link rel="stylesheet" href="styles/entry.css">
+  <link rel="stylesheet" href="styles/generator.css">
+  <link rel="stylesheet" href="styles/settings.css">
+  <link rel="stylesheet" href="styles/animations.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Screen 1: Lock / Auth -->
+    <div id="screen-lock" class="screen active"></div>
+
+    <!-- Screen 2: Dashboard -->
+    <div id="screen-dashboard" class="screen"></div>
+
+    <!-- Screen 3: Category List View -->
+    <div id="screen-category" class="screen"></div>
+
+    <!-- Screen 4: Entry Detail View -->
+    <div id="screen-entry-detail" class="screen"></div>
+
+    <!-- Screen 5: Entry Add/Edit Form -->
+    <div id="screen-entry-form" class="screen"></div>
+
+    <!-- Screen 6: Built-in Password Generator -->
+    <div id="screen-generator" class="screen"></div>
+
+    <!-- Screen 7: Settings -->
+    <div id="screen-settings" class="screen"></div>
+
+    <!-- Global Confirmation Modal -->
+    <div id="confirm-modal" class="modal-overlay">
+      <div class="modal-dialog">
+        <div class="modal-title">Confirm Action</div>
+        <div class="modal-description">Are you sure?</div>
+        <div class="modal-actions">
+          <button id="modal-cancel-btn" class="btn btn-secondary btn-sm">Cancel</button>
+          <button id="modal-confirm-btn" class="btn btn-primary btn-sm">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
