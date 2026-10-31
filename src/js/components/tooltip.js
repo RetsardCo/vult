@@ -64,11 +64,18 @@ export function initTooltipSystem() {
     if (id === "detail-edit-btn") return "Edit Secret";
     if (id === "detail-delete-btn") return "Delete Secret";
     if (id === "detail-fav-btn") return "Toggle Favorite";
+    if (id === "gen-pwd-quick-btn") return "Generate strong password";
+    if (id === "add-custom-field-btn") return "Add custom field";
+    if (id === "form-save-btn") return "Save secret to vault";
 
     if (el.classList.contains("password-toggle-btn")) return "Show / Hide Password";
     if (el.classList.contains("copy-btn") || el.classList.contains("copy-single-btn") || el.classList.contains("copy-quick-btn") || el.classList.contains("copy-note-btn")) {
       return "Copy to Clipboard";
     }
+    if (el.classList.contains("copy-all-btn")) return "Copy all remaining recovery codes";
+    if (el.classList.contains("copy-seed-btn")) return "Copy all recovery seed words";
+    if (el.classList.contains("toggle-reveal-btn")) return "Show / Hide seed phrase words";
+    if (el.classList.contains("c-del")) return "Remove custom field";
     if (el.classList.contains("reveal-btn")) return "Show / Hide Secret";
     if (el.classList.contains("pin-key")) {
       const key = el.dataset.key;
@@ -87,9 +94,8 @@ export function initTooltipSystem() {
     tooltipEl.style.display = "block";
 
     const rect = target.getBoundingClientRect();
-    const tipRect = tooltipEl.getBoundingClientRect();
-    const tipWidth = tipRect.width;
-    const tipHeight = tipRect.height;
+    const tipWidth = tooltipEl.offsetWidth || tooltipEl.getBoundingClientRect().width;
+    const tipHeight = tooltipEl.offsetHeight || tooltipEl.getBoundingClientRect().height;
 
     // Center horizontally over target element
     let left = rect.left + (rect.width / 2) - (tipWidth / 2);

@@ -26,6 +26,7 @@ export function initLockScreen({ onUnlocked }) {
   }
 
   function renderSetupView() {
+    window.onkeydown = null;
     container.innerHTML = `
       <div class="auth-container">
         <div class="auth-header">
@@ -261,8 +262,10 @@ export function initLockScreen({ onUnlocked }) {
     // Keyboard support for PIN and Enter
     window.onkeydown = (e) => {
       if (!container.classList.contains("active")) return;
-      if (e.target && e.target.id === "unlock-password") {
-        if (e.key === "Enter") triggerUnlock();
+      if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) {
+        if (e.target.id === "unlock-password" && e.key === "Enter") {
+          triggerUnlock();
+        }
         return;
       }
       if (lockoutSecondsRemaining > 0) return;

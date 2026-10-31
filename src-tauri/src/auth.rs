@@ -285,7 +285,13 @@ impl AuthManager {
 
         // 2. Decrypt vault data
         match self.storage.load_vault(effective_pass.as_bytes(), &self.crypto) {
-            Ok(data) => {
+            Ok(mut data) => {
+                // If legacy vault didn't have pin_length recorded in settings, self-heal now:
+                if data.settings.pin_length.is_none() && pin.is_some() && config.auth_mode != "password_only" {
+                    data.settings.pin_length = pin.as_ref().map(|p| p.len());
+                    let _ = self.storage.save_vault(&data, effective_pass.as_bytes(), &self.crypto);
+                }
+
                 state.is_unlocked = true;
                 state.data = Some(data);
                 state.active_password = Some(effective_pass.into_bytes());
@@ -843,6 +849,11 @@ impl AuthManager {
             .clone()
             .ok_or_else(|| "No active password in memory".to_string())?;
 
+        // Preserve current active vault auth settings and pin_length when importing entries
+        if let Some(ref current_data) = state.data {
+            vault_data.settings = current_data.settings.clone();
+        }
+
         // Save imported vault encrypted with current active vault key
         self.storage
             .save_vault(&vault_data, &active_pass, &self.crypto)
@@ -1215,5 +1226,100 @@ mod tests {
         assert!(auth.import_vault_data("not-valid-base64!!!", None).is_err());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_unlock_self_heals_missing_pin_length() {
+        let temp_dir = env::temp_dir().join(format!("vult_heal_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+        let auth = AuthManager::new(storage, crypto);
+
+        // Setup vault with 4-digit PIN
+        auth.setup_vault(Some("9876".to_string()), "Pass123".to_string(), "pin_only".to_string()).unwrap();
+
+        // Simulate a legacy vault where pin_length was None
+        {
+            let mut state = auth.state.lock().unwrap();
+            let active = state.active_password.clone().unwrap();
+            if let Some(ref mut d) = state.data {
+                d.settings.pin_length = None;
+                auth.storage.save_vault(d, &active, &auth.crypto).unwrap();
+            }
+        }
+        auth.lock();
+
+        // Initially in legacy state, settings in config.json have pin_length = None
+        assert_eq!(auth.get_auth_settings().pin_length, None);
+
+        // Unlock with the 4-digit PIN
+        assert!(auth.unlock(Some("9876".to_string()), "".to_string()).is_ok());
+
+        // Now settings should be self-healed to Some(4)
+        assert_eq!(auth.get_auth_settings().pin_length, Some(4));
+
+        // Lock again and check that config.json was persisted with Some(4)
+        auth.lock();
+        assert_eq!(auth.get_auth_settings().pin_length, Some(4));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_various_pin_lengths_setup_and_persist() {
+        for len in [4, 5, 7, 8] {
+            let temp_dir = env::temp_dir().join(format!("vult_pin_len_{}_{}", len, uuid::Uuid::new_v4()));
+            let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+            let crypto = CryptoEngine::fast_for_testing();
+            let auth = AuthManager::new(storage, crypto);
+
+            let pin = "1".repeat(len);
+            auth.setup_vault(Some(pin.clone()), "Pass123".to_string(), "pin_and_password".to_string()).unwrap();
+            assert_eq!(auth.get_auth_settings().pin_length, Some(len));
+
+            auth.lock();
+            // In locked state, config should still accurately reflect configured length
+            assert_eq!(auth.get_auth_settings().pin_length, Some(len));
+
+            // Verify unlock works with this exact PIN
+            assert!(auth.unlock(Some(pin), "Pass123".to_string()).is_ok());
+
+            let _ = std::fs::remove_dir_all(&temp_dir);
+        }
+    }
+
+    #[test]
+    fn test_import_vault_preserves_active_auth_settings() {
+        let temp_dir1 = env::temp_dir().join(format!("vult_imp_src_{}", uuid::Uuid::new_v4()));
+        let storage1 = StorageManager::with_custom_dir(temp_dir1.clone()).unwrap();
+        let crypto1 = CryptoEngine::fast_for_testing();
+        let auth1 = AuthManager::new(storage1, crypto1);
+
+        // Vault 1: PIN Only, 4-digit PIN
+        auth1.setup_vault(Some("1234".to_string()), "".to_string(), "pin_only".to_string()).unwrap();
+        let exported_b64 = auth1.export_vault_encrypted().unwrap();
+
+        // Vault 2: Password Only
+        let temp_dir2 = env::temp_dir().join(format!("vult_imp_dst_{}", uuid::Uuid::new_v4()));
+        let storage2 = StorageManager::with_custom_dir(temp_dir2.clone()).unwrap();
+        let crypto2 = CryptoEngine::fast_for_testing();
+        let auth2 = AuthManager::new(storage2, crypto2);
+
+        auth2.setup_vault(None, "PassMaster99".to_string(), "password_only".to_string()).unwrap();
+
+        // Import Vault 1 backup into Vault 2 (decrypted using Vault 1's key "1234")
+        auth2.import_vault_data(&exported_b64, Some("1234".to_string())).unwrap();
+
+        // Vault 2 must STILL be in password_only mode, not corrupted into pin_only!
+        let s2 = auth2.get_auth_settings();
+        assert_eq!(s2.auth_mode, "password_only");
+        assert_eq!(s2.pin_length, None);
+
+        // Lock Vault 2 and verify it unlocks with PassMaster99
+        auth2.lock();
+        assert!(auth2.unlock(None, "PassMaster99".to_string()).is_ok());
+
+        let _ = std::fs::remove_dir_all(&temp_dir1);
+        let _ = std::fs::remove_dir_all(&temp_dir2);
     }
 }

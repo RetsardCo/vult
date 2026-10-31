@@ -169,9 +169,27 @@ export function initSettingsScreen({
   }
 
   async function saveUpdatedSettings() {
+    const newMode = authModeSelect.value;
+    if (newMode !== "password_only" && currentSettings.auth_mode === "password_only" && !currentSettings.pin_length) {
+      const pin = prompt("Enter a 4-8 digit numeric PIN for the new authentication mode:");
+      if (!pin || !/^\d{4,8}$/.test(pin)) {
+        showToast("A valid 4 to 8 digit PIN is required", "error");
+        authModeSelect.value = currentSettings.auth_mode || "password_only";
+        return;
+      }
+      try {
+        await invokeCommand("change_pin", { newPin: pin });
+        currentSettings.pin_length = pin.length;
+      } catch (err) {
+        showToast(typeof err === "string" ? err : "Failed to set PIN", "error");
+        authModeSelect.value = currentSettings.auth_mode || "password_only";
+        return;
+      }
+    }
+
     const updated = {
       ...currentSettings,
-      auth_mode: authModeSelect.value,
+      auth_mode: newMode,
       windows_hello_enabled: winHelloToggle.checked,
       auto_lock_minutes: parseInt(autoLockSelect.value, 10),
       clipboard_clear_seconds: parseInt(clipSelect.value, 10)

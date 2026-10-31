@@ -16,6 +16,10 @@
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  background: var(--bg-app);
+  z-index: 5;
 }
 
 .auth-logo {
