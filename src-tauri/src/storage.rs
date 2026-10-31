@@ -125,8 +125,9 @@ impl StorageManager {
         let mut plaintext_json = serde_json::to_vec(data)?;
 
         // Encrypt with AES-256-GCM + Argon2id
-        let encrypted_bytes = crypto.encrypt_vault(password, &plaintext_json)?;
+        let encrypted_res = crypto.encrypt_vault(password, &plaintext_json);
         plaintext_json.zeroize();
+        let encrypted_bytes = encrypted_res?;
 
         // Atomic write to avoid file corruption
         let temp_path = vault_path.with_extension("tmp");
@@ -192,6 +193,10 @@ impl StorageManager {
         let config_path = self.get_config_path();
         if config_path.exists() {
             fs::remove_file(config_path)?;
+        }
+        let hello_path = self.get_vault_path().with_extension("hello");
+        if hello_path.exists() {
+            let _ = fs::remove_file(hello_path);
         }
         Ok(())
     }

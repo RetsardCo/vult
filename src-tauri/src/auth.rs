@@ -72,6 +72,7 @@ pub mod dpapi {
             if res.is_ok() {
                 let slice = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize);
                 let result = slice.to_vec();
+                std::ptr::write_bytes(data_out.pbData, 0, data_out.cbData as usize);
                 let _ = LocalFree(Some(HLOCAL(data_out.pbData as _)));
                 return Ok(result);
             }
@@ -90,6 +91,7 @@ pub mod dpapi {
 
             let slice = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize);
             let result = slice.to_vec();
+            std::ptr::write_bytes(data_out.pbData, 0, data_out.cbData as usize);
             let _ = LocalFree(Some(HLOCAL(data_out.pbData as _)));
             Ok(result)
         }
@@ -144,6 +146,7 @@ pub mod dpapi {
 
             let slice = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize);
             let result = slice.to_vec();
+            std::ptr::write_bytes(data_out.pbData, 0, data_out.cbData as usize);
             let _ = LocalFree(Some(HLOCAL(data_out.pbData as _)));
             Ok(result)
         }
@@ -236,6 +239,39 @@ pub fn compute_effective_pass(auth_mode: &str, pin: Option<&str>, password: &str
             }
         }
     }
+}
+
+/// Structured token stored in vault.hello and protected by DPAPI
+#[derive(serde::Serialize, serde::Deserialize, Zeroize, zeroize::ZeroizeOnDrop)]
+pub struct HelloTokenPayload {
+    pub effective_pass: String,
+    pub pin: Option<String>,
+    pub master_pwd: Option<String>,
+}
+
+/// Parse structured effective pass to extract password and pin
+pub fn parse_effective_pass(effective: &str) -> Option<(String, String)> {
+    let prefix = "vult$v1$";
+    if !effective.starts_with(prefix) {
+        return None;
+    }
+    let rest = &effective[prefix.len()..];
+    let colon_idx = rest.find(':')?;
+    let pass_len: usize = rest[..colon_idx].parse().ok()?;
+    let after_colon = &rest[colon_idx + 1..];
+
+    let bytes = after_colon.as_bytes();
+    if bytes.len() <= pass_len {
+        return None;
+    }
+    if bytes[pass_len] != b'$' {
+        return None;
+    }
+
+    let password_str = std::str::from_utf8(&bytes[..pass_len]).ok()?;
+    let pin_str = std::str::from_utf8(&bytes[pass_len + 1..]).ok()?;
+
+    Some((password_str.to_string(), pin_str.to_string()))
 }
 
 pub struct AuthManager {
@@ -334,7 +370,7 @@ impl AuthManager {
     pub fn setup_vault(
         &self,
         pin: Option<String>,
-        password: String,
+        mut password: String,
         auth_mode: String,
     ) -> Result<bool, String> {
         let mut vault_data = VaultData::default();
@@ -346,12 +382,16 @@ impl AuthManager {
             pin.as_ref().map(|p| p.len())
         };
 
-        let effective_pass = compute_effective_pass(&auth_mode, pin.as_deref(), &password);
+        let mut effective_pass = compute_effective_pass(&auth_mode, pin.as_deref(), &password);
 
         // Save encrypted vault
-        self.storage
-            .save_vault(&vault_data, effective_pass.as_bytes(), &self.crypto)
-            .map_err(|e| format!("Failed to save vault: {}", e))?;
+        let save_res = self.storage
+            .save_vault(&vault_data, effective_pass.as_bytes(), &self.crypto);
+        if let Err(e) = save_res {
+            effective_pass.zeroize();
+            password.zeroize();
+            return Err(format!("Failed to save vault: {}", e));
+        }
 
         // Unlock in-memory state
         let mut state = self.state.lock().unwrap();
@@ -367,22 +407,26 @@ impl AuthManager {
     }
 
     /// Unlock existing vault
-    pub fn unlock(&self, pin: Option<String>, password: String) -> Result<bool, String> {
+    pub fn unlock(&self, pin: Option<String>, mut password: String) -> Result<bool, String> {
         let mut state = self.state.lock().unwrap();
 
         // 1. Check brute force backoff
-        Self::check_lockout(&state)?;
+        if let Err(e) = Self::check_lockout(&state) {
+            password.zeroize();
+            return Err(e);
+        }
 
         // Read config to check mode
         let config = self.storage.read_config().unwrap_or_default();
 
         if config.auth_mode == "pin_and_password" {
             if pin.as_ref().map(|p| p.trim().is_empty()).unwrap_or(true) {
+                password.zeroize();
                 return Err("PIN is required for this vault".to_string());
             }
         }
 
-        let effective_pass = compute_effective_pass(&config.auth_mode, pin.as_deref(), &password);
+        let mut effective_pass = compute_effective_pass(&config.auth_mode, pin.as_deref(), &password);
 
         // 2. Decrypt vault data
         match self.storage.load_vault(effective_pass.as_bytes(), &self.crypto) {
@@ -393,6 +437,8 @@ impl AuthManager {
                     let _ = self.storage.save_vault(&data, effective_pass.as_bytes(), &self.crypto);
                 }
 
+                let hello_enabled = data.settings.windows_hello_enabled;
+
                 state.is_unlocked = true;
                 state.data = Some(data);
                 state.active_password = Some(effective_pass.into_bytes());
@@ -400,18 +446,27 @@ impl AuthManager {
                 state.active_master_pwd = Some(password);
                 state.failed_attempts = 0;
                 state.lockout_until = None;
+                drop(state);
+
+                if hello_enabled {
+                    let _ = self.save_windows_hello_token(true);
+                }
+
                 Ok(true)
             }
             Err(e) => {
                 // Backwards compatibility fallback for pin_and_password vaults created with legacy format "{password}:{pin}"
                 if config.auth_mode == "pin_and_password" {
-                    let legacy_pass = compute_legacy_effective_pass(&config.auth_mode, pin.as_deref(), &password);
+                    let mut legacy_pass = compute_legacy_effective_pass(&config.auth_mode, pin.as_deref(), &password);
                     if let Ok(mut data) = self.storage.load_vault(legacy_pass.as_bytes(), &self.crypto) {
+                        legacy_pass.zeroize();
                         // Transparently upgrade to structured composite key on disk
                         if data.settings.pin_length.is_none() && pin.is_some() {
                             data.settings.pin_length = pin.as_ref().map(|p| p.len());
                         }
                         let _ = self.storage.save_vault(&data, effective_pass.as_bytes(), &self.crypto);
+
+                        let hello_enabled = data.settings.windows_hello_enabled;
 
                         state.is_unlocked = true;
                         state.data = Some(data);
@@ -420,9 +475,19 @@ impl AuthManager {
                         state.active_master_pwd = Some(password);
                         state.failed_attempts = 0;
                         state.lockout_until = None;
+                        drop(state);
+
+                        if hello_enabled {
+                            let _ = self.save_windows_hello_token(true);
+                        }
+
                         return Ok(true);
                     }
+                    legacy_pass.zeroize();
                 }
+
+                effective_pass.zeroize();
+                password.zeroize();
 
                 let err_msg = Self::record_failure(&mut state);
                 Err(format!("{} ({})", err_msg, e))
@@ -471,7 +536,18 @@ impl AuthManager {
                 return Ok(false);
             }
 
-            // Read hello token if stored
+            self.authenticate_windows_hello_token()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Err("Windows Hello is only supported on Windows".to_string())
+        }
+    }
+
+    /// Internal token decryption, state restoration, and self-healing for Windows Hello
+    pub fn authenticate_windows_hello_token(&self) -> Result<bool, String> {
+        #[cfg(target_os = "windows")]
+        {
             let token_path = self.storage.get_vault_path().with_extension("hello");
             if !token_path.exists() {
                 return Err("Windows Hello is not yet linked with a saved credential in this session. Unlock once with your Master Password.".to_string());
@@ -483,22 +559,104 @@ impl AuthManager {
             let mut decrypted_pwd_bytes = dpapi::unprotect(&encrypted_token)
                 .map_err(|e| format!("Failed to decrypt Windows Hello token via DPAPI: {}", e))?;
 
-            let effective_pass_res = String::from_utf8(decrypted_pwd_bytes.clone());
-            decrypted_pwd_bytes.zeroize();
-            let effective_pass = effective_pass_res
-                .map_err(|e| format!("Corrupted token: {}", e))?;
+            let config = self.storage.read_config().unwrap_or_default();
 
+            // Try to parse structured JSON token payload first
+            let (mut effective_pass, pin, master_pwd) = if decrypted_pwd_bytes.starts_with(b"{") {
+                if let Ok(mut payload) = serde_json::from_slice::<HelloTokenPayload>(&decrypted_pwd_bytes) {
+                    let eff = payload.effective_pass.clone();
+                    let p = payload.pin.clone();
+                    let m = payload.master_pwd.clone();
+                    payload.zeroize();
+                    decrypted_pwd_bytes.zeroize();
+                    (eff, p, m)
+                } else {
+                    let s_res = String::from_utf8(decrypted_pwd_bytes);
+                    let s = s_res.map_err(|e| {
+                        let mut b = e.into_bytes();
+                        b.zeroize();
+                        "Corrupted token: invalid UTF-8".to_string()
+                    })?;
+                    let (parsed_pwd, parsed_pin) = parse_effective_pass(&s)
+                        .map(|(p, pi)| (Some(p), Some(pi)))
+                        .unwrap_or((None, None));
+                    (s, parsed_pin, parsed_pwd)
+                }
+            } else {
+                let s_res = String::from_utf8(decrypted_pwd_bytes);
+                let s = s_res.map_err(|e| {
+                    let mut b = e.into_bytes();
+                    b.zeroize();
+                    "Corrupted token: invalid UTF-8".to_string()
+                })?;
+                let (parsed_pwd, parsed_pin) = parse_effective_pass(&s)
+                    .map(|(p, pi)| (Some(p), Some(pi)))
+                    .unwrap_or((None, None));
+                (s, parsed_pin, parsed_pwd)
+            };
+
+            // Attempt to load vault with effective_pass
             let mut state = self.state.lock().unwrap();
-            match self.storage.load_vault(effective_pass.as_bytes(), &self.crypto) {
+            let load_res = self.storage.load_vault(effective_pass.as_bytes(), &self.crypto);
+
+            match load_res {
                 Ok(data) => {
+                    let restored_pin = pin.clone().or_else(|| {
+                        if config.auth_mode == "pin_only" {
+                            Some(effective_pass.clone())
+                        } else {
+                            None
+                        }
+                    });
+                    let restored_master = master_pwd.clone().or_else(|| {
+                        if config.auth_mode == "password_only" {
+                            Some(effective_pass.clone())
+                        } else {
+                            None
+                        }
+                    });
+
                     state.is_unlocked = true;
                     state.active_password = Some(effective_pass.into_bytes());
-                    state.data = Some(data);
+                    state.active_pin = restored_pin;
+                    state.active_master_pwd = restored_master;
                     state.failed_attempts = 0;
                     state.lockout_until = None;
+                    state.data = Some(data);
+                    drop(state);
+
+                    // Transparently upgrade vault.hello to structured token with entropy
+                    let _ = self.save_windows_hello_token(true);
+
                     Ok(true)
                 }
                 Err(e) => {
+                    // If loading failed, check if it's a legacy composite key format
+                    if config.auth_mode == "pin_and_password" {
+                        if let (Some(p), Some(m)) = (&pin, &master_pwd) {
+                            let legacy_pass = compute_legacy_effective_pass(&config.auth_mode, Some(p), m);
+                            if let Ok(legacy_data) = self.storage.load_vault(legacy_pass.as_bytes(), &self.crypto) {
+                                let modern_pass = compute_effective_pass(&config.auth_mode, Some(p), m);
+                                let _ = self.storage.save_vault(&legacy_data, modern_pass.as_bytes(), &self.crypto);
+
+                                state.is_unlocked = true;
+                                state.active_password = Some(modern_pass.into_bytes());
+                                state.active_pin = Some(p.clone());
+                                state.active_master_pwd = Some(m.clone());
+                                state.failed_attempts = 0;
+                                state.lockout_until = None;
+                                state.data = Some(legacy_data);
+                                drop(state);
+
+                                let _ = self.save_windows_hello_token(true);
+                                return Ok(true);
+                            }
+                        }
+                    }
+
+                    // Zeroize sensitive credentials on failure
+                    effective_pass.zeroize();
+
                     let err_msg = Self::record_failure(&mut state);
                     Err(format!("{} ({})", err_msg, e))
                 }
@@ -524,7 +682,20 @@ impl AuthManager {
         if let Some(ref pwd) = state.active_password {
             #[cfg(target_os = "windows")]
             {
-                let encrypted_bytes = dpapi::protect(pwd)?;
+                let effective_str = String::from_utf8_lossy(pwd).to_string();
+                let mut payload = HelloTokenPayload {
+                    effective_pass: effective_str,
+                    pin: state.active_pin.clone(),
+                    master_pwd: state.active_master_pwd.clone(),
+                };
+                let mut json_bytes = serde_json::to_vec(&payload)
+                    .map_err(|e| format!("Failed to serialize token: {}", e))?;
+                payload.zeroize();
+
+                let encrypted_res = dpapi::protect(&json_bytes);
+                json_bytes.zeroize();
+                let encrypted_bytes = encrypted_res?;
+
                 std::fs::write(&token_path, encrypted_bytes)
                     .map_err(|e| format!("Failed to store Windows Hello token: {}", e))?;
                 Ok(())
@@ -562,7 +733,7 @@ impl AuthManager {
         let master = state.active_master_pwd.clone().unwrap_or_default();
 
         let active_pin_len = state.active_pin.as_ref().map(|p| p.len());
-        let new_effective = if mode_changed {
+        let mut new_effective = if mode_changed {
             compute_effective_pass(&new_settings.auth_mode, pin.as_deref(), &master)
         } else {
             String::from_utf8(state.active_password.clone().unwrap_or_default()).unwrap_or_default()
@@ -578,9 +749,12 @@ impl AuthManager {
             }
             data.settings.pin_hash = None; // Never store plain PIN on disk
             data.modified_at = chrono::Utc::now().to_rfc3339();
-            self.storage
-                .save_vault(data, new_effective.as_bytes(), &self.crypto)
-                .map_err(|e| format!("Failed to save updated settings: {}", e))?;
+            let save_res = self.storage
+                .save_vault(data, new_effective.as_bytes(), &self.crypto);
+            if let Err(e) = save_res {
+                new_effective.zeroize();
+                return Err(format!("Failed to save updated settings: {}", e));
+            }
 
             if mode_changed {
                 if let Some(mut old_pwd) = state.active_password.take() {
@@ -597,9 +771,10 @@ impl AuthManager {
     }
 
     /// Change PIN
-    pub fn change_pin(&self, new_pin: String) -> Result<(), String> {
+    pub fn change_pin(&self, mut new_pin: String) -> Result<(), String> {
         let mut state = self.state.lock().unwrap();
         if !state.is_unlocked {
+            new_pin.zeroize();
             return Err("Vault must be unlocked to change PIN".to_string());
         }
 
@@ -609,15 +784,27 @@ impl AuthManager {
             .map(|d| d.settings.clone())
             .unwrap_or_default();
 
-        let master = state.active_master_pwd.clone().unwrap_or_default();
-        let new_effective = compute_effective_pass(&config.auth_mode, Some(&new_pin), &master);
+        let master = match state.active_master_pwd.clone() {
+            Some(m) if !m.is_empty() => m,
+            _ if config.auth_mode == "pin_and_password" => {
+                new_pin.zeroize();
+                return Err("Active master password not found in session. Please unlock with master password.".to_string());
+            }
+            _ => String::new(),
+        };
+
+        let mut new_effective = compute_effective_pass(&config.auth_mode, Some(&new_pin), &master);
 
         if let Some(ref mut data) = state.data {
             data.settings.pin_length = Some(new_pin.len());
             data.modified_at = chrono::Utc::now().to_rfc3339();
-            self.storage
-                .save_vault(data, new_effective.as_bytes(), &self.crypto)
-                .map_err(|e| format!("Failed to re-encrypt vault with new PIN: {}", e))?;
+            let save_res = self.storage
+                .save_vault(data, new_effective.as_bytes(), &self.crypto);
+            if let Err(e) = save_res {
+                new_pin.zeroize();
+                new_effective.zeroize();
+                return Err(format!("Failed to re-encrypt vault with new PIN: {}", e));
+            }
 
             if let Some(mut old_pwd) = state.active_password.take() {
                 old_pwd.zeroize();
@@ -637,9 +824,10 @@ impl AuthManager {
     }
 
     /// Change Master Password
-    pub fn change_password(&self, new_password: String) -> Result<(), String> {
+    pub fn change_password(&self, mut new_password: String) -> Result<(), String> {
         let mut state = self.state.lock().unwrap();
         if !state.is_unlocked {
+            new_password.zeroize();
             return Err("Vault must be unlocked to change password".to_string());
         }
 
@@ -649,14 +837,26 @@ impl AuthManager {
             .map(|d| d.settings.clone())
             .unwrap_or_default();
 
-        let pin = state.active_pin.clone();
-        let new_effective = compute_effective_pass(&config.auth_mode, pin.as_deref(), &new_password);
+        let pin = match state.active_pin.clone() {
+            Some(p) if !p.is_empty() => Some(p),
+            _ if config.auth_mode == "pin_and_password" => {
+                new_password.zeroize();
+                return Err("Active PIN not found in session. Please unlock with PIN.".to_string());
+            }
+            _ => None,
+        };
+
+        let mut new_effective = compute_effective_pass(&config.auth_mode, pin.as_deref(), &new_password);
 
         if let Some(ref mut data) = state.data {
             data.modified_at = chrono::Utc::now().to_rfc3339();
-            self.storage
-                .save_vault(data, new_effective.as_bytes(), &self.crypto)
-                .map_err(|e| format!("Failed to re-encrypt vault with new password: {}", e))?;
+            let save_res = self.storage
+                .save_vault(data, new_effective.as_bytes(), &self.crypto);
+            if let Err(e) = save_res {
+                new_password.zeroize();
+                new_effective.zeroize();
+                return Err(format!("Failed to re-encrypt vault with new password: {}", e));
+            }
 
             if let Some(mut old_pwd) = state.active_password.take() {
                 old_pwd.zeroize();
@@ -933,12 +1133,14 @@ impl AuthManager {
             let active_pwd = state.active_password.clone().map(|p| String::from_utf8_lossy(&p).to_string());
             drop(state);
 
-            let decrypt_pass = password
+            let mut decrypt_pass = password
                 .or(active_pwd)
                 .ok_or_else(|| "Password is required to decrypt this backup file".to_string())?;
 
-            let mut plaintext = self.crypto
-                .decrypt_vault(decrypt_pass.as_bytes(), &binary_bytes)
+            let decrypt_res = self.crypto
+                .decrypt_vault(decrypt_pass.as_bytes(), &binary_bytes);
+            decrypt_pass.zeroize();
+            let mut plaintext = decrypt_res
                 .map_err(|e| format!("Failed to decrypt backup: {}", e))?;
 
             let parse_res = serde_json::from_slice(&plaintext);
@@ -969,7 +1171,7 @@ impl AuthManager {
             return Err("Vault must be unlocked to import data".to_string());
         }
 
-        let active_pass = state
+        let mut active_pass = state
             .active_password
             .clone()
             .ok_or_else(|| "No active password in memory".to_string())?;
@@ -980,9 +1182,10 @@ impl AuthManager {
         }
 
         // Save imported vault encrypted with current active vault key
-        self.storage
-            .save_vault(&vault_data, &active_pass, &self.crypto)
-            .map_err(|e| format!("Failed to save imported vault: {}", e))?;
+        let save_res = self.storage
+            .save_vault(&vault_data, &active_pass, &self.crypto);
+        active_pass.zeroize();
+        save_res.map_err(|e| format!("Failed to save imported vault: {}", e))?;
 
         state.data = Some(vault_data);
         Ok(())
@@ -1521,6 +1724,114 @@ mod tests {
         assert!(!auth.is_unlocked());
         assert!(auth.unlock(Some(pin.to_string()), pass.to_string()).is_ok());
         assert!(auth.is_unlocked());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_composite_key_framing_with_unicode_and_symbols() {
+        let password = "P@ss:wørd$🔑#1!";
+        let pin = "9876";
+        let eff = compute_effective_pass("pin_and_password", Some(pin), password);
+        let parsed = parse_effective_pass(&eff);
+        assert!(parsed.is_some());
+        let (extracted_pwd, extracted_pin) = parsed.unwrap();
+        assert_eq!(extracted_pwd, password);
+        assert_eq!(extracted_pin, pin);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_windows_hello_structured_token_and_settings_preservation() {
+        let temp_dir = env::temp_dir().join(format!("vult_hello_pres_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+        let auth = AuthManager::new(storage, crypto);
+
+        let pin = "1234";
+        let pass = "MasterKey99!";
+        auth.setup_vault(Some(pin.to_string()), pass.to_string(), "pin_and_password".to_string()).unwrap();
+
+        // Enable Windows Hello
+        auth.save_windows_hello_token(true).unwrap();
+        let hello_file = auth.storage.get_vault_path().with_extension("hello");
+        assert!(hello_file.exists());
+
+        // Lock vault
+        auth.lock();
+        assert!(!auth.is_unlocked());
+
+        // Authenticate via Windows Hello token
+        assert!(auth.authenticate_windows_hello_token().is_ok());
+        assert!(auth.is_unlocked());
+
+        // Verify active_master_pwd and active_pin are properly preserved in memory!
+        {
+            let state = auth.state.lock().unwrap();
+            assert_eq!(state.active_master_pwd.as_deref(), Some(pass));
+            assert_eq!(state.active_pin.as_deref(), Some(pin));
+        }
+
+        // Change PIN to 5678 while unlocked via Windows Hello
+        auth.change_pin("5678".to_string()).unwrap();
+
+        // Lock vault
+        auth.lock();
+        assert!(!auth.is_unlocked());
+
+        // Verify vault unlocks with new PIN 5678 and original MasterKey99!
+        assert!(auth.unlock(Some("5678".to_string()), pass.to_string()).is_ok());
+        assert!(auth.is_unlocked());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_windows_hello_legacy_token_upgrade() {
+        let temp_dir = env::temp_dir().join(format!("vult_hello_leg_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+        let auth = AuthManager::new(storage, crypto);
+
+        let pin = "4321";
+        let pass = "SuperPassword77!";
+        auth.setup_vault(Some(pin.to_string()), pass.to_string(), "pin_and_password".to_string()).unwrap();
+        auth.lock();
+
+        // Manually simulate a legacy Windows Hello token:
+        // Raw string format protected without DPAPI entropy
+        let modern_key = compute_effective_pass("pin_and_password", Some(pin), pass);
+        let legacy_token_bytes = dpapi::protect_without_entropy(modern_key.as_bytes()).unwrap();
+        let token_path = auth.storage.get_vault_path().with_extension("hello");
+        std::fs::write(&token_path, &legacy_token_bytes).unwrap();
+
+        // Authenticate via Windows Hello token (should detect legacy format, decrypt without entropy, and upgrade)
+        assert!(auth.authenticate_windows_hello_token().is_ok());
+        assert!(auth.is_unlocked());
+
+        // Read token from disk and verify it was upgraded with entropy (generic DPAPI unprotect without entropy fails)
+        let upgraded_token = std::fs::read(&token_path).unwrap();
+        let res = dpapi::unprotect_without_entropy(&upgraded_token);
+        assert!(res.is_err(), "Upgraded token must be protected with Vult entropy");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_wipe_vault_removes_hello_token() {
+        let temp_dir = env::temp_dir().join(format!("vult_wipe_hel_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+        let auth = AuthManager::new(storage, crypto);
+
+        auth.setup_vault(None, "Pass".to_string(), "password_only".to_string()).unwrap();
+        let hello_file = auth.storage.get_vault_path().with_extension("hello");
+        std::fs::write(&hello_file, b"dummy hello token").unwrap();
+        assert!(hello_file.exists());
+
+        auth.wipe_vault().unwrap();
+        assert!(!hello_file.exists(), "vault.hello must be removed on wipe");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

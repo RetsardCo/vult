@@ -67,7 +67,16 @@ impl fmt::Display for CryptoError {
 impl std::error::Error for CryptoError {}
 
 pub fn validate_kdf_params(m_cost: u32, t_cost: u32, p_cost: u32) -> Result<(), CryptoError> {
-    if m_cost < MIN_M_COST || m_cost > MAX_M_COST {
+    validate_kdf_params_strict(m_cost, t_cost, p_cost, MIN_M_COST)
+}
+
+pub fn validate_kdf_params_strict(
+    m_cost: u32,
+    t_cost: u32,
+    p_cost: u32,
+    min_m_cost: u32,
+) -> Result<(), CryptoError> {
+    if m_cost < min_m_cost || m_cost > MAX_M_COST {
         return Err(CryptoError::InvalidKdfParameters);
     }
     if t_cost < MIN_T_COST || t_cost > MAX_T_COST {
@@ -130,6 +139,7 @@ impl CryptoEngine {
 
     /// Encrypt plaintext using AES-256-GCM and serialize with header and salt
     pub fn encrypt_vault(&self, password: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+        validate_kdf_params(self.m_cost, self.t_cost, self.p_cost)?;
         if plaintext.len() > MAX_PLAINTEXT_SIZE {
             return Err(CryptoError::PayloadTooLarge);
         }
@@ -182,6 +192,9 @@ impl CryptoEngine {
     pub fn decrypt_vault(&self, password: &[u8], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
         if data.len() < MIN_TOTAL_SIZE {
             return Err(CryptoError::DataTooShort);
+        }
+        if data.len() > HEADER_SIZE + MAX_CIPHERTEXT_SIZE {
+            return Err(CryptoError::PayloadTooLarge);
         }
 
         // Check magic bytes
@@ -438,5 +451,54 @@ mod tests {
         let huge_dummy = vec![0u8; MAX_PLAINTEXT_SIZE + 1];
         let res = engine.encrypt_vault(b"Password", &huge_dummy);
         assert_eq!(res.unwrap_err(), CryptoError::PayloadTooLarge);
+    }
+
+    #[test]
+    fn test_encrypt_vault_rejects_invalid_kdf_params() {
+        // m_cost = 0 (too small)
+        let engine_bad_m = CryptoEngine::new(0, 1, 1);
+        let res = engine_bad_m.encrypt_vault(b"Password", b"Secret");
+        assert_eq!(res.unwrap_err(), CryptoError::InvalidKdfParameters);
+
+        // t_cost = 0 (too small)
+        let engine_bad_t = CryptoEngine::new(FAST_TEST_M_COST, 0, 1);
+        let res = engine_bad_t.encrypt_vault(b"Password", b"Secret");
+        assert_eq!(res.unwrap_err(), CryptoError::InvalidKdfParameters);
+
+        // p_cost = 0 (too small)
+        let engine_bad_p = CryptoEngine::new(FAST_TEST_M_COST, 1, 0);
+        let res = engine_bad_p.encrypt_vault(b"Password", b"Secret");
+        assert_eq!(res.unwrap_err(), CryptoError::InvalidKdfParameters);
+    }
+
+    #[test]
+    fn test_decrypt_vault_rejects_oversized_payload() {
+        let engine = CryptoEngine::fast_for_testing();
+        let mut huge_data = vec![0u8; HEADER_SIZE + MAX_CIPHERTEXT_SIZE + 1];
+        huge_data[..5].copy_from_slice(MAGIC_BYTES);
+        huge_data[5] = FORMAT_VERSION;
+        let res = engine.decrypt_vault(b"Password", &huge_data);
+        assert_eq!(res.unwrap_err(), CryptoError::PayloadTooLarge);
+    }
+
+    #[test]
+    fn test_production_kdf_bounds_strict_validation() {
+        // Production lower bound is 16 MiB = 16384 KiB
+        const PROD_MIN_M: u32 = 16384;
+        assert_eq!(
+            validate_kdf_params_strict(16383, 3, 1, PROD_MIN_M).unwrap_err(),
+            CryptoError::InvalidKdfParameters
+        );
+        assert_eq!(
+            validate_kdf_params_strict(4096, 3, 1, PROD_MIN_M).unwrap_err(),
+            CryptoError::InvalidKdfParameters
+        );
+        assert!(validate_kdf_params_strict(16384, 3, 1, PROD_MIN_M).is_ok());
+        assert!(validate_kdf_params_strict(65536, 3, 1, PROD_MIN_M).is_ok());
+        assert!(validate_kdf_params_strict(262144, 3, 1, PROD_MIN_M).is_ok());
+        assert_eq!(
+            validate_kdf_params_strict(262145, 3, 1, PROD_MIN_M).unwrap_err(),
+            CryptoError::InvalidKdfParameters
+        );
     }
 }
