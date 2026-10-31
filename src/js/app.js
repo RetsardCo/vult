@@ -108,7 +108,12 @@ class VultApp {
         this.showScreen("lock");
         this.lockCtrl.reset();
       },
-      onLockVault: () => this.lockVault()
+      onLockVault: () => this.lockVault(),
+      onSettingsUpdated: (newSettings) => {
+        if (newSettings && newSettings.auto_lock_minutes !== undefined) {
+          this.autoLockMinutes = newSettings.auto_lock_minutes;
+        }
+      }
     });
 
     // Start on lock screen

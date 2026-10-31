@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthSettings {
@@ -91,6 +92,52 @@ impl Default for VaultData {
     }
 }
 
+impl zeroize::Zeroize for VaultEntry {
+    fn zeroize(&mut self) {
+        self.id.zeroize();
+        self.category.zeroize();
+        self.title.zeroize();
+        if let Some(ref mut n) = self.notes {
+            n.zeroize();
+        }
+        for tag in &mut self.tags {
+            tag.zeroize();
+        }
+        zeroize_json_value(&mut self.fields);
+    }
+}
+
+pub fn zeroize_json_value(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::String(s) => {
+            s.zeroize();
+            *s = String::new();
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr.iter_mut() {
+                zeroize_json_value(item);
+            }
+            arr.clear();
+        }
+        serde_json::Value::Object(map) => {
+            for (_, val) in map.iter_mut() {
+                zeroize_json_value(val);
+            }
+            map.clear();
+        }
+        _ => {}
+    }
+}
+
+impl zeroize::Zeroize for VaultData {
+    fn zeroize(&mut self) {
+        for entry in &mut self.entries {
+            entry.zeroize();
+        }
+        self.entries.clear();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,4 +172,30 @@ mod tests {
         assert_eq!(deserialized.entries[0].title, "Discord Backup");
         assert_eq!(deserialized.entries[0].category, "recovery_code");
     }
+
+    #[test]
+    fn test_zeroize_vault_data() {
+        let mut vault = VaultData::default();
+        let entry = VaultEntry {
+            id: "uuid-sensitive".to_string(),
+            category: "login".to_string(),
+            title: "SuperSecretSite".to_string(),
+            fields: serde_json::json!({
+                "password": "MySuperSecretPassword123!",
+                "api_key": "sk-1234567890abcdef"
+            }),
+            notes: Some("Confidential note".to_string()),
+            tags: vec!["critical".to_string()],
+            favorite: false,
+            created_at: "".to_string(),
+            modified_at: "".to_string(),
+            accessed_at: "".to_string(),
+        };
+        vault.entries.push(entry);
+
+        assert_eq!(vault.entries.len(), 1);
+        vault.zeroize();
+        assert_eq!(vault.entries.len(), 0);
+    }
 }
+

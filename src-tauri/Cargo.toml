@@ -30,7 +30,7 @@ zeroize = { version = "1", features = ["derive"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 directories = "5"
-windows = { version = "0.62", features = ["Security_Credentials_UI"] }
+windows = { version = "0.62", features = ["Security_Credentials_UI", "Win32_Security_Cryptography", "Win32_Foundation"] }
 
 
 

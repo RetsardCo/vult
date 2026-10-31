@@ -1,10 +1,141 @@
 use crate::crypto::CryptoEngine;
 use crate::models::{AuthSettings, VaultData, VaultEntry};
-
 use crate::storage::StorageManager;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use zeroize::Zeroize;
+
+#[cfg(target_os = "windows")]
+pub mod dpapi {
+    use windows::Win32::Foundation::{HLOCAL, LocalFree};
+    use windows::Win32::Security::Cryptography::{
+        CryptProtectData, CryptUnprotectData, CRYPT_INTEGER_BLOB,
+    };
+
+    pub fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
+        let data_in = CRYPT_INTEGER_BLOB {
+            cbData: data.len() as u32,
+            pbData: data.as_ptr() as *mut u8,
+        };
+        let mut data_out = CRYPT_INTEGER_BLOB::default();
+
+        unsafe {
+            CryptProtectData(
+                &data_in,
+                None,
+                None,
+                None,
+                None,
+                0,
+                &mut data_out,
+            )
+            .map_err(|e| format!("DPAPI encryption failed: {}", e))?;
+
+            let slice = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize);
+            let result = slice.to_vec();
+            let _ = LocalFree(Some(HLOCAL(data_out.pbData as _)));
+            Ok(result)
+        }
+    }
+
+    pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
+        let data_in = CRYPT_INTEGER_BLOB {
+            cbData: data.len() as u32,
+            pbData: data.as_ptr() as *mut u8,
+        };
+        let mut data_out = CRYPT_INTEGER_BLOB::default();
+
+        unsafe {
+            CryptUnprotectData(
+                &data_in,
+                None,
+                None,
+                None,
+                None,
+                0,
+                &mut data_out,
+            )
+            .map_err(|e| format!("DPAPI decryption failed: {}", e))?;
+
+            let slice = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize);
+            let result = slice.to_vec();
+            let _ = LocalFree(Some(HLOCAL(data_out.pbData as _)));
+            Ok(result)
+        }
+    }
+}
+
+pub fn base64_encode(data: &[u8]) -> String {
+    const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] } else { 0 };
+        out.push(CHARSET[(b0 >> 2) as usize] as char);
+        out.push(CHARSET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(CHARSET[(((b1 & 0x0F) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(CHARSET[(b2 & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+pub fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+    let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
+    if clean.len() % 4 != 0 {
+        return Err("Invalid base64 length".to_string());
+    }
+    let decode_val = |b: u8| -> Result<u8, String> {
+        match b {
+            b'A'..=b'Z' => Ok(b - b'A'),
+            b'a'..=b'z' => Ok(b - b'a' + 26),
+            b'0'..=b'9' => Ok(b - b'0' + 52),
+            b'+' => Ok(62),
+            b'/' => Ok(63),
+            b'=' => Ok(0),
+            _ => Err(format!("Invalid base64 character: {}", b as char)),
+        }
+    };
+    let bytes = clean.as_bytes();
+    let mut out = Vec::with_capacity(clean.len() / 4 * 3);
+    for chunk in bytes.chunks(4) {
+        let c0 = decode_val(chunk[0])?;
+        let c1 = decode_val(chunk[1])?;
+        let c2 = decode_val(chunk[2])?;
+        let c3 = decode_val(chunk[3])?;
+        out.push((c0 << 2) | (c1 >> 4));
+        if chunk[2] != b'=' {
+            out.push(((c1 & 0x0F) << 4) | (c2 >> 2));
+        }
+        if chunk[3] != b'=' {
+            out.push(((c2 & 0x03) << 6) | c3);
+        }
+    }
+    Ok(out)
+}
+
+fn compute_effective_pass(auth_mode: &str, pin: Option<&str>, password: &str) -> String {
+    match auth_mode {
+        "pin_only" => pin.unwrap_or(password).to_string(),
+        "password_only" => password.to_string(),
+        _ => {
+            // "pin_and_password" requires both
+            if let Some(p) = pin {
+                format!("{}:{}", password, p)
+            } else {
+                password.to_string()
+            }
+        }
+    }
+}
 
 pub struct AuthManager {
     pub storage: StorageManager,
@@ -16,14 +147,25 @@ struct AuthState {
     is_unlocked: bool,
     data: Option<VaultData>,
     active_password: Option<Vec<u8>>,
+    active_pin: Option<String>,
+    active_master_pwd: Option<String>,
     failed_attempts: u32,
     lockout_until: Option<Instant>,
 }
 
 impl Drop for AuthState {
     fn drop(&mut self) {
+        if let Some(mut data) = self.data.take() {
+            data.zeroize();
+        }
         if let Some(mut pwd) = self.active_password.take() {
             pwd.zeroize();
+        }
+        if let Some(mut pin) = self.active_pin.take() {
+            pin.zeroize();
+        }
+        if let Some(mut master) = self.active_master_pwd.take() {
+            master.zeroize();
         }
     }
 }
@@ -37,6 +179,8 @@ impl AuthManager {
                 is_unlocked: false,
                 data: None,
                 active_password: None,
+                active_pin: None,
+                active_master_pwd: None,
                 failed_attempts: 0,
                 lockout_until: None,
             }),
@@ -93,19 +237,10 @@ impl AuthManager {
         auth_mode: String,
     ) -> Result<bool, String> {
         let mut vault_data = VaultData::default();
-        vault_data.settings.auth_mode = auth_mode;
+        vault_data.settings.auth_mode = auth_mode.clone();
+        vault_data.settings.pin_hash = None; // Never store plain PIN on disk!
 
-        // Hash PIN if present for quick verification / settings
-        if let Some(ref p) = pin {
-            vault_data.settings.pin_hash = Some(p.clone());
-        }
-
-        // Use password (or PIN if pin_only) as the encryption key
-        let effective_pass = if vault_data.settings.auth_mode == "pin_only" {
-            pin.clone().unwrap_or(password.clone())
-        } else {
-            password.clone()
-        };
+        let effective_pass = compute_effective_pass(&auth_mode, pin.as_deref(), &password);
 
         // Save encrypted vault
         self.storage
@@ -117,6 +252,8 @@ impl AuthManager {
         state.is_unlocked = true;
         state.data = Some(vault_data);
         state.active_password = Some(effective_pass.into_bytes());
+        state.active_pin = pin;
+        state.active_master_pwd = Some(password);
         state.failed_attempts = 0;
         state.lockout_until = None;
 
@@ -132,25 +269,14 @@ impl AuthManager {
 
         // Read config to check mode
         let config = self.storage.read_config().unwrap_or_default();
-        let effective_pass = if config.auth_mode == "pin_only" {
-            pin.clone().unwrap_or(password.clone())
-        } else {
-            password.clone()
-        };
 
-        // If mode requires PIN and PIN is present, verify against PIN hash in config if stored
         if config.auth_mode == "pin_and_password" {
-            if let Some(ref required_pin) = config.pin_hash {
-                if let Some(ref user_pin) = pin {
-                    if user_pin != required_pin {
-                        let err_msg = Self::record_failure(&mut state);
-                        return Err(err_msg);
-                    }
-                } else {
-                    return Err("PIN is required for this vault".to_string());
-                }
+            if pin.as_ref().map(|p| p.trim().is_empty()).unwrap_or(true) {
+                return Err("PIN is required for this vault".to_string());
             }
         }
+
+        let effective_pass = compute_effective_pass(&config.auth_mode, pin.as_deref(), &password);
 
         // 2. Decrypt vault data
         match self.storage.load_vault(effective_pass.as_bytes(), &self.crypto) {
@@ -158,6 +284,8 @@ impl AuthManager {
                 state.is_unlocked = true;
                 state.data = Some(data);
                 state.active_password = Some(effective_pass.into_bytes());
+                state.active_pin = pin;
+                state.active_master_pwd = Some(password);
                 state.failed_attempts = 0;
                 state.lockout_until = None;
                 Ok(true)
@@ -173,9 +301,17 @@ impl AuthManager {
     pub fn lock(&self) {
         let mut state = self.state.lock().unwrap();
         state.is_unlocked = false;
-        state.data = None;
+        if let Some(mut data) = state.data.take() {
+            data.zeroize();
+        }
         if let Some(mut pwd) = state.active_password.take() {
             pwd.zeroize();
+        }
+        if let Some(mut pin) = state.active_pin.take() {
+            pin.zeroize();
+        }
+        if let Some(mut master) = state.active_master_pwd.take() {
+            master.zeroize();
         }
     }
 
@@ -208,15 +344,30 @@ impl AuthManager {
                 return Err("Windows Hello is not yet linked with a saved credential in this session. Unlock once with your Master Password.".to_string());
             }
 
-            let encrypted_pass = std::fs::read(&token_path)
+            let encrypted_token = std::fs::read(&token_path)
                 .map_err(|e| format!("Failed to read Windows Hello token: {}", e))?;
             
-            // Decrypt password
-            let pwd = String::from_utf8(encrypted_pass)
+            let decrypted_pwd_bytes = dpapi::unprotect(&encrypted_token)
+                .map_err(|e| format!("Failed to decrypt Windows Hello token via DPAPI: {}", e))?;
+
+            let effective_pass = String::from_utf8(decrypted_pwd_bytes)
                 .map_err(|e| format!("Corrupted token: {}", e))?;
 
-            self.unlock(None, pwd)
-
+            let mut state = self.state.lock().unwrap();
+            match self.storage.load_vault(effective_pass.as_bytes(), &self.crypto) {
+                Ok(data) => {
+                    state.is_unlocked = true;
+                    state.active_password = Some(effective_pass.into_bytes());
+                    state.data = Some(data);
+                    state.failed_attempts = 0;
+                    state.lockout_until = None;
+                    Ok(true)
+                }
+                Err(e) => {
+                    let err_msg = Self::record_failure(&mut state);
+                    Err(format!("{} ({})", err_msg, e))
+                }
+            }
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -224,7 +375,7 @@ impl AuthManager {
         }
     }
 
-    /// Save the active password for Windows Hello unlock
+    /// Save the active password for Windows Hello unlock (encrypted via DPAPI)
     pub fn save_windows_hello_token(&self, enabled: bool) -> Result<(), String> {
         let token_path = self.storage.get_vault_path().with_extension("hello");
         if !enabled {
@@ -236,9 +387,17 @@ impl AuthManager {
 
         let state = self.state.lock().unwrap();
         if let Some(ref pwd) = state.active_password {
-            std::fs::write(&token_path, pwd)
-                .map_err(|e| format!("Failed to store Windows Hello token: {}", e))?;
-            Ok(())
+            #[cfg(target_os = "windows")]
+            {
+                let encrypted_bytes = dpapi::protect(pwd)?;
+                std::fs::write(&token_path, encrypted_bytes)
+                    .map_err(|e| format!("Failed to store Windows Hello token: {}", e))?;
+                Ok(())
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                Err("Windows Hello is only supported on Windows".to_string())
+            }
         } else {
             Err("Vault must be unlocked to enable Windows Hello".to_string())
         }
@@ -261,20 +420,34 @@ impl AuthManager {
             return Err("Vault must be unlocked to update settings".to_string());
         }
 
-        let password = state
-            .active_password
-            .clone()
-            .ok_or_else(|| "No active password in memory".to_string())?;
+        let old_mode = state.data.as_ref().map(|d| d.settings.auth_mode.clone()).unwrap_or_default();
+        let mode_changed = old_mode != new_settings.auth_mode;
+
+        let pin = state.active_pin.clone();
+        let master = state.active_master_pwd.clone().unwrap_or_default();
+
+        let new_effective = if mode_changed {
+            compute_effective_pass(&new_settings.auth_mode, pin.as_deref(), &master)
+        } else {
+            String::from_utf8(state.active_password.clone().unwrap_or_default()).unwrap_or_default()
+        };
 
         if let Some(ref mut data) = state.data {
             data.settings = new_settings.clone();
+            data.settings.pin_hash = None; // Never store plain PIN on disk
             data.modified_at = chrono::Utc::now().to_rfc3339();
             self.storage
-                .save_vault(data, &password, &self.crypto)
+                .save_vault(data, new_effective.as_bytes(), &self.crypto)
                 .map_err(|e| format!("Failed to save updated settings: {}", e))?;
+
+            if mode_changed {
+                if let Some(mut old_pwd) = state.active_password.take() {
+                    old_pwd.zeroize();
+                }
+                state.active_password = Some(new_effective.into_bytes());
+            }
         }
 
-        // Also update token if windows hello toggle changed
         drop(state);
         self.save_windows_hello_token(new_settings.windows_hello_enabled)?;
 
@@ -288,18 +461,35 @@ impl AuthManager {
             return Err("Vault must be unlocked to change PIN".to_string());
         }
 
-        let password = state
-            .active_password
-            .clone()
-            .ok_or_else(|| "No active password in memory".to_string())?;
+        let config = state
+            .data
+            .as_ref()
+            .map(|d| d.settings.clone())
+            .unwrap_or_default();
+
+        let master = state.active_master_pwd.clone().unwrap_or_default();
+        let new_effective = compute_effective_pass(&config.auth_mode, Some(&new_pin), &master);
 
         if let Some(ref mut data) = state.data {
-            data.settings.pin_hash = Some(new_pin);
             data.modified_at = chrono::Utc::now().to_rfc3339();
             self.storage
-                .save_vault(data, &password, &self.crypto)
-                .map_err(|e| format!("Failed to save changed PIN: {}", e))?;
+                .save_vault(data, new_effective.as_bytes(), &self.crypto)
+                .map_err(|e| format!("Failed to re-encrypt vault with new PIN: {}", e))?;
+
+            if let Some(mut old_pwd) = state.active_password.take() {
+                old_pwd.zeroize();
+            }
+            state.active_password = Some(new_effective.into_bytes());
+            state.active_pin = Some(new_pin);
         }
+
+        let hello_enabled = config.windows_hello_enabled;
+        drop(state);
+
+        if hello_enabled {
+            self.save_windows_hello_token(true)?;
+        }
+
         Ok(())
     }
 
@@ -310,17 +500,33 @@ impl AuthManager {
             return Err("Vault must be unlocked to change password".to_string());
         }
 
+        let config = state
+            .data
+            .as_ref()
+            .map(|d| d.settings.clone())
+            .unwrap_or_default();
+
+        let pin = state.active_pin.clone();
+        let new_effective = compute_effective_pass(&config.auth_mode, pin.as_deref(), &new_password);
+
         if let Some(ref mut data) = state.data {
             data.modified_at = chrono::Utc::now().to_rfc3339();
             self.storage
-                .save_vault(data, new_password.as_bytes(), &self.crypto)
-                .map_err(|e| format!("Failed to re-encrypt vault: {}", e))?;
+                .save_vault(data, new_effective.as_bytes(), &self.crypto)
+                .map_err(|e| format!("Failed to re-encrypt vault with new password: {}", e))?;
 
-            // Replace active password in memory
             if let Some(mut old_pwd) = state.active_password.take() {
                 old_pwd.zeroize();
             }
-            state.active_password = Some(new_password.into_bytes());
+            state.active_password = Some(new_effective.into_bytes());
+            state.active_master_pwd = Some(new_password);
+        }
+
+        let hello_enabled = config.windows_hello_enabled;
+        drop(state);
+
+        if hello_enabled {
+            self.save_windows_hello_token(true)?;
         }
 
         Ok(())
@@ -365,6 +571,34 @@ impl AuthManager {
                 .ok_or_else(|| "Entry not found".to_string())
         } else {
             Err("No vault loaded".to_string())
+        }
+    }
+
+    /// Search entries
+    pub fn search_entries(&self, query: &str) -> Result<Vec<VaultEntry>, String> {
+        let state = self.state.lock().unwrap();
+        if !state.is_unlocked {
+            return Err("Vault is locked".to_string());
+        }
+        let q = query.trim().to_lowercase();
+        if let Some(ref data) = state.data {
+            if q.is_empty() {
+                return Ok(data.entries.clone());
+            }
+            let filtered = data
+                .entries
+                .iter()
+                .filter(|e| {
+                    e.title.to_lowercase().contains(&q)
+                        || e.tags.iter().any(|t| t.to_lowercase().contains(&q))
+                        || e.notes.as_deref().unwrap_or("").to_lowercase().contains(&q)
+                        || e.fields.to_string().to_lowercase().contains(&q)
+                })
+                .cloned()
+                .collect();
+            Ok(filtered)
+        } else {
+            Ok(Vec::new())
         }
     }
 
@@ -499,6 +733,21 @@ impl AuthManager {
         Ok(())
     }
 
+    /// Export raw encrypted binary vault encoded as Base64 (.vult backup)
+    pub fn export_vault_encrypted(&self) -> Result<String, String> {
+        let state = self.state.lock().unwrap();
+        if !state.is_unlocked {
+            return Err("Vault must be unlocked to export".to_string());
+        }
+        let vault_path = self.storage.get_vault_path();
+        if !vault_path.exists() {
+            return Err("No vault file found to export".to_string());
+        }
+        let bytes = std::fs::read(&vault_path)
+            .map_err(|e| format!("Failed to read vault file: {}", e))?;
+        Ok(base64_encode(&bytes))
+    }
+
     /// Export plain JSON backup of vault
     pub fn export_vault_data(&self) -> Result<String, String> {
         let state = self.state.lock().unwrap();
@@ -512,26 +761,81 @@ impl AuthManager {
         }
     }
 
-    /// Import JSON backup
-    pub fn import_vault_data(&self, json_data: &str) -> Result<(), String> {
-        let imported: VaultData = serde_json::from_str(json_data)
-            .map_err(|e| format!("Invalid vault JSON format: {}", e))?;
+    /// Import vault backup (supports both encrypted .vult base64/binary and plain JSON)
+    pub fn import_vault_data(&self, input: &str, password: Option<String>) -> Result<(), String> {
+        let trimmed = input.trim();
+
+        // 1. Try if JSON format
+        let mut imported: Option<VaultData> = if trimmed.starts_with('{') {
+            serde_json::from_str(trimmed).ok()
+        } else {
+            None
+        };
+
+        // 2. If not JSON, try binary VULT1 or base64 VULT1
+        if imported.is_none() {
+            let binary_bytes = if trimmed.as_bytes().starts_with(crate::crypto::MAGIC_BYTES) {
+                trimmed.as_bytes().to_vec()
+            } else if let Ok(decoded) = base64_decode(trimmed) {
+                decoded
+            } else {
+                return Err("Unsupported file format: expected valid Vult backup (.vult) or JSON format".to_string());
+            };
+
+            if !binary_bytes.starts_with(crate::crypto::MAGIC_BYTES) {
+                return Err("Invalid vault file: missing VULT1 magic header".to_string());
+            }
+
+            let state = self.state.lock().unwrap();
+            let active_pwd = state.active_password.clone().map(|p| String::from_utf8_lossy(&p).to_string());
+            drop(state);
+
+            let decrypt_pass = password
+                .or(active_pwd)
+                .ok_or_else(|| "Password is required to decrypt this backup file".to_string())?;
+
+            let plaintext = self.crypto
+                .decrypt_vault(decrypt_pass.as_bytes(), &binary_bytes)
+                .map_err(|e| format!("Failed to decrypt backup: {}", e))?;
+
+            imported = Some(serde_json::from_slice(&plaintext)
+                .map_err(|e| format!("Corrupted vault data in backup: {}", e))?);
+        }
+
+        let mut vault_data = imported.ok_or_else(|| "Failed to parse imported vault data".to_string())?;
+
+        // Sanitize imported entries
+        for entry in &mut vault_data.entries {
+            if entry.id.is_empty() {
+                entry.id = uuid::Uuid::new_v4().to_string();
+            }
+            if entry.created_at.is_empty() {
+                entry.created_at = chrono::Utc::now().to_rfc3339();
+            }
+            if entry.modified_at.is_empty() {
+                entry.modified_at = entry.created_at.clone();
+            }
+            if entry.accessed_at.is_empty() {
+                entry.accessed_at = entry.created_at.clone();
+            }
+        }
 
         let mut state = self.state.lock().unwrap();
         if !state.is_unlocked {
             return Err("Vault must be unlocked to import data".to_string());
         }
 
-        let password = state
+        let active_pass = state
             .active_password
             .clone()
             .ok_or_else(|| "No active password in memory".to_string())?;
 
+        // Save imported vault encrypted with current active vault key
         self.storage
-            .save_vault(&imported, &password, &self.crypto)
+            .save_vault(&vault_data, &active_pass, &self.crypto)
             .map_err(|e| format!("Failed to save imported vault: {}", e))?;
 
-        state.data = Some(imported);
+        state.data = Some(vault_data);
         Ok(())
     }
 
@@ -669,8 +973,8 @@ mod tests {
     }
 
     #[test]
-    fn test_export_and_import_data() {
-        let temp_dir1 = env::temp_dir().join(format!("vult_exp1_{}", uuid::Uuid::new_v4()));
+    fn test_export_and_import_encrypted_vault() {
+        let temp_dir1 = env::temp_dir().join(format!("vult_enc_exp1_{}", uuid::Uuid::new_v4()));
         let storage1 = StorageManager::with_custom_dir(temp_dir1.clone()).unwrap();
         let crypto1 = CryptoEngine::fast_for_testing();
         let auth1 = AuthManager::new(storage1, crypto1);
@@ -694,22 +998,28 @@ mod tests {
             accessed_at: "".to_string(),
         }).unwrap();
 
-        let exported_json = auth1.export_vault_data().unwrap();
+        // Export encrypted base64
+        let exported_b64 = auth1.export_vault_encrypted().unwrap();
 
         // Import into second vault
-        let temp_dir2 = env::temp_dir().join(format!("vult_exp2_{}", uuid::Uuid::new_v4()));
+        let temp_dir2 = env::temp_dir().join(format!("vult_enc_exp2_{}", uuid::Uuid::new_v4()));
         let storage2 = StorageManager::with_custom_dir(temp_dir2.clone()).unwrap();
         let crypto2 = CryptoEngine::fast_for_testing();
         let auth2 = AuthManager::new(storage2, crypto2);
 
         auth2.setup_vault(None, "Pass456".to_string(), "password_only".to_string())
             .unwrap();
-        auth2.import_vault_data(&exported_json).unwrap();
+        
+        // Import encrypted backup decrypted with original password Pass123
+        auth2.import_vault_data(&exported_b64, Some("Pass123".to_string())).unwrap();
 
         let entries = auth2.get_entries(None).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].title, "Crypto Wallet");
-        assert_eq!(entries[0].fields["words"].as_array().unwrap().len(), 12);
+
+        // Re-lock second vault and verify it unlocks with Pass456 (not Pass123)
+        auth2.lock();
+        assert!(auth2.unlock(None, "Pass456".to_string()).is_ok());
 
         let _ = std::fs::remove_dir_all(&temp_dir1);
         let _ = std::fs::remove_dir_all(&temp_dir2);
@@ -760,7 +1070,116 @@ mod tests {
         assert_eq!(recovery_entries.len(), 1);
         assert_eq!(recovery_entries[0].title, "Test recovery_code");
 
+        // Search test
+        let search_res = auth.search_entries("Stripe").unwrap();
+        assert_eq!(search_res.len(), 1);
+        assert_eq!(search_res[0].category, "api_key");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_dpapi_protect_unprotect() {
+        let secret = b"VerySecretMasterPasswordToCache";
+        let protected = dpapi::protect(secret).unwrap();
+        assert_ne!(protected, secret);
+
+        let unprotected = dpapi::unprotect(&protected).unwrap();
+        assert_eq!(unprotected, secret);
+    }
+
+    #[test]
+    fn test_brute_force_lockout_delays() {
+        let temp_dir = env::temp_dir().join(format!("vult_lockout_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+        let auth = AuthManager::new(storage, crypto);
+
+        auth.setup_vault(None, "Pass123".to_string(), "password_only".to_string()).unwrap();
+        auth.lock();
+
+        // 1st failed attempt
+        let res1 = auth.unlock(None, "Wrong1".to_string());
+        assert!(res1.is_err());
+
+        // 2nd failed attempt
+        let res2 = auth.unlock(None, "Wrong2".to_string());
+        assert!(res2.is_err());
+
+        // 3rd failed attempt triggers 2s delay
+        let res3 = auth.unlock(None, "Wrong3".to_string());
+        assert!(res3.is_err());
+        assert!(res3.unwrap_err().contains("Too many failed attempts"));
+
+        // Attempting immediately again is blocked by lockout
+        let res_locked = auth.unlock(None, "Pass123".to_string());
+        assert!(res_locked.is_err());
+        assert!(res_locked.unwrap_err().contains("Too many failed attempts"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_pin_change_reencrypts_correctly() {
+        let temp_dir = env::temp_dir().join(format!("vult_pin_chg_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+        let auth = AuthManager::new(storage, crypto);
+
+        auth.setup_vault(Some("1111".to_string()), "Pass123".to_string(), "pin_and_password".to_string()).unwrap();
+
+        // Change PIN to 2222
+        auth.change_pin("2222".to_string()).unwrap();
+        auth.lock();
+
+        // Old PIN 1111 fails
+        assert!(auth.unlock(Some("1111".to_string()), "Pass123".to_string()).is_err());
+
+        // New PIN 2222 succeeds
+        assert!(auth.unlock(Some("2222".to_string()), "Pass123".to_string()).is_ok());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_mode_switch_reencrypts_correctly() {
+        let temp_dir = env::temp_dir().join(format!("vult_mode_chg_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+        let auth = AuthManager::new(storage, crypto);
+
+        auth.setup_vault(Some("1234".to_string()), "Pass123".to_string(), "pin_and_password".to_string()).unwrap();
+
+        // Switch to password_only
+        let mut settings = auth.get_auth_settings();
+        settings.auth_mode = "password_only".to_string();
+        auth.update_auth_settings(settings).unwrap();
+
+        auth.lock();
+
+        // In password_only mode, unlocking with just password succeeds
+        assert!(auth.unlock(None, "Pass123".to_string()).is_ok());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_corrupted_backup_rejected() {
+        let temp_dir = env::temp_dir().join(format!("vult_bad_bkp_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+        let auth = AuthManager::new(storage, crypto);
+
+        auth.setup_vault(None, "Pass123".to_string(), "password_only".to_string()).unwrap();
+
+        // Malformed JSON
+        let bad_json = r#"{"entries": [{"id": "bad", "incomplete": true"#;
+        assert!(auth.import_vault_data(bad_json, None).is_err());
+
+        // Bad base64
+        assert!(auth.import_vault_data("not-valid-base64!!!", None).is_err());
+
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
-

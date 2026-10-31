@@ -5,7 +5,8 @@ import { showConfirmModal } from "../components/modal.js";
 export function initSettingsScreen({
   onBack,
   onVaultWiped,
-  onLockVault
+  onLockVault,
+  onSettingsUpdated = null
 }) {
   const container = document.getElementById("screen-settings");
   let currentSettings = {};
@@ -179,6 +180,7 @@ export function initSettingsScreen({
       await invokeCommand("update_auth_settings", { settings: updated });
       currentSettings = updated;
       showToast("Settings updated");
+      if (onSettingsUpdated) onSettingsUpdated(updated);
     } catch (err) {
       showToast(typeof err === "string" ? err : "Failed to update settings", "error");
     }
@@ -223,15 +225,21 @@ export function initSettingsScreen({
   // Export
   container.querySelector("#set-export-row").onclick = async () => {
     try {
-      const exportJson = await invokeCommand("export_vault_data");
-      const blob = new Blob([exportJson], { type: "application/json" });
+      const exportB64 = await invokeCommand("export_vault_encrypted");
+      const byteChars = atob(exportB64);
+      const byteNumbers = new Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) {
+        byteNumbers[i] = byteChars.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: "application/octet-stream" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `vult-backup-${new Date().toISOString().slice(0, 10)}.vult`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast("Encrypted backup exported");
+      showToast("Encrypted backup exported (.vult)");
     } catch (e) {
       showToast(typeof e === "string" ? e : "Export failed", "error");
     }
@@ -245,18 +253,45 @@ export function initSettingsScreen({
     input.onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
+
+      const isJson = file.name.endsWith(".json");
       const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const rawData = event.target.result;
-          await invokeCommand("import_vault_data", { jsonData: rawData });
-          showToast("Vault imported successfully");
-          loadSettings();
-        } catch (err) {
-          showToast(typeof err === "string" ? err : "Import failed", "error");
-        }
-      };
-      reader.readAsText(file);
+
+      if (isJson) {
+        reader.onload = async (event) => {
+          try {
+            const rawData = event.target.result;
+            await invokeCommand("import_vault_data", { data: rawData, password: null });
+            showToast("JSON Vault imported successfully");
+            loadSettings();
+          } catch (err) {
+            showToast(typeof err === "string" ? err : "Import failed", "error");
+          }
+        };
+        reader.readAsText(file);
+      } else {
+        reader.onload = async (event) => {
+          try {
+            const arrayBuffer = event.target.result;
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = "";
+            for (let i = 0; i < bytes.byteLength; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            const b64Data = btoa(binary);
+
+            const pwdPrompt = prompt("Enter password for this backup (Leave blank to use current Master Password):");
+            const backupPassword = pwdPrompt && pwdPrompt.trim() ? pwdPrompt.trim() : null;
+
+            await invokeCommand("import_vault_data", { data: b64Data, password: backupPassword });
+            showToast("Encrypted backup imported successfully");
+            loadSettings();
+          } catch (err) {
+            showToast(typeof err === "string" ? err : "Import failed", "error");
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      }
     };
     input.click();
   };

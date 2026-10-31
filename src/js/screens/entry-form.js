@@ -11,6 +11,8 @@ export function initEntryFormScreen({
   let editEntryId = null;
   let selectedCategory = null;
   let customFieldsList = [];
+  let existingCodesMap = new Map();
+  let existingEntryFields = {};
 
   container.innerHTML = `
     <header class="app-header">
@@ -67,6 +69,8 @@ export function initEntryFormScreen({
 
   function setupNew(preselectedCategory = null) {
     editEntryId = null;
+    existingCodesMap.clear();
+    existingEntryFields = {};
     customFieldsList = [{ label: "Key", value: "", is_secret: false }];
     if (preselectedCategory && CATEGORIES[preselectedCategory]) {
       setupFormForCategory(preselectedCategory);
@@ -78,6 +82,13 @@ export function initEntryFormScreen({
   function setupEdit(entry) {
     editEntryId = entry.id;
     selectedCategory = entry.category;
+    existingCodesMap.clear();
+    existingEntryFields = entry.fields || {};
+    if (entry.category === "recovery_code" && Array.isArray(entry.fields?.codes)) {
+      entry.fields.codes.forEach(c => {
+        if (c && c.code) existingCodesMap.set(c.code.trim(), !!c.used);
+      });
+    }
     customFieldsList = entry.category === "custom" && entry.fields?.fields 
       ? JSON.parse(JSON.stringify(entry.fields.fields)) 
       : [{ label: "Key", value: "", is_secret: false }];
@@ -430,7 +441,10 @@ export function initEntryFormScreen({
       const codeList = rawCodes.split("\n")
         .map(c => c.trim())
         .filter(Boolean)
-        .map(code => ({ code, used: false }));
+        .map(code => ({
+          code,
+          used: existingCodesMap.has(code) ? existingCodesMap.get(code) : false
+        }));
       fields = {
         service: fieldsContainer.querySelector("#f-service")?.value.trim() || "",
         code_type: fieldsContainer.querySelector("#f-code-type")?.value.trim() || "2FA Backup Codes",
@@ -455,7 +469,8 @@ export function initEntryFormScreen({
         key_type: fieldsContainer.querySelector("#f-key-type")?.value.trim() || "Ed25519",
         private_key: fieldsContainer.querySelector("#f-private-key")?.value || "",
         public_key: fieldsContainer.querySelector("#f-public-key")?.value || null,
-        passphrase: fieldsContainer.querySelector("#f-passphrase")?.value || null
+        passphrase: fieldsContainer.querySelector("#f-passphrase")?.value || null,
+        fingerprint: existingEntryFields?.fingerprint || null
       };
     } else if (selectedCategory === "wifi_password") {
       fields = {

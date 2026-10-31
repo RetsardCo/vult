@@ -88,6 +88,14 @@ pub async fn get_entry(
 }
 
 #[tauri::command]
+pub async fn search_entries(
+    auth: State<'_, Arc<AuthManager>>,
+    query: String,
+) -> Result<Vec<VaultEntry>, String> {
+    auth.search_entries(&query)
+}
+
+#[tauri::command]
 pub async fn add_entry(
     auth: State<'_, Arc<AuthManager>>,
     entry: VaultEntry,
@@ -122,6 +130,13 @@ pub async fn toggle_code_used(
 }
 
 #[tauri::command]
+pub async fn export_vault_encrypted(
+    auth: State<'_, Arc<AuthManager>>,
+) -> Result<String, String> {
+    auth.export_vault_encrypted()
+}
+
+#[tauri::command]
 pub async fn export_vault_data(
     auth: State<'_, Arc<AuthManager>>,
 ) -> Result<String, String> {
@@ -131,9 +146,10 @@ pub async fn export_vault_data(
 #[tauri::command]
 pub async fn import_vault_data(
     auth: State<'_, Arc<AuthManager>>,
-    json_data: String,
+    data: String,
+    password: Option<String>,
 ) -> Result<(), String> {
-    auth.import_vault_data(&json_data)
+    auth.import_vault_data(&data, password)
 }
 
 #[tauri::command]
@@ -144,27 +160,34 @@ pub async fn wipe_vault(auth: State<'_, Arc<AuthManager>>) -> Result<(), String>
 #[tauri::command]
 pub async fn copy_to_clipboard(
     app: AppHandle,
+    auth: State<'_, Arc<AuthManager>>,
     text: String,
-    auto_clear_seconds: u32,
+    auto_clear_seconds: Option<u32>,
 ) -> Result<(), String> {
     let clipboard = app.clipboard();
     clipboard
         .write_text(&text)
         .map_err(|e| format!("Clipboard write failed: {}", e))?;
 
-    if auto_clear_seconds > 0 {
+    let timeout_secs = auto_clear_seconds.unwrap_or_else(|| {
+        auth.get_auth_settings().clipboard_clear_seconds
+    });
+
+    if timeout_secs > 0 {
         let app_clone = app.clone();
         let expected_text = text.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(auto_clear_seconds as u64));
-            if let Ok(current_text) = app_clone.clipboard().read_text() {
-                if current_text == expected_text {
-                    let _ = app_clone.clipboard().write_text("");
+            std::thread::sleep(Duration::from_secs(timeout_secs as u64));
+            let app_inner = app_clone.clone();
+            let _ = app_clone.run_on_main_thread(move || {
+                if let Ok(current_text) = app_inner.clipboard().read_text() {
+                    if current_text == expected_text {
+                        let _ = app_inner.clipboard().write_text("");
+                    }
                 }
-            }
+            });
         });
     }
-
 
     Ok(())
 }
