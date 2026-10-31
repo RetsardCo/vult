@@ -5,8 +5,11 @@
 [![Backend](https://img.shields.io/badge/Rust-1.99+-DEA584.svg?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Security](https://img.shields.io/badge/Encryption-AES--256--GCM-green.svg)](#security-architecture)
 [![KDF](https://img.shields.io/badge/KDF-Argon2id-blueviolet.svg)](#security-architecture)
+[![Docs](https://img.shields.io/badge/Documentation-Full%20Guide-orange.svg)](DOCUMENTATION.md)
 
 > **Vult** is a high-security, local-first personal secret manager desktop application engineered with a compact footprint (400 × 620 px), macOS-inspired dark ergonomics, and military-grade encryption.
+>
+> 📖 **Read the [Complete Technical & Architectural Documentation](DOCUMENTATION.md)** for exhaustive details on the crypto engine, DPAPI token protection, schemas, and IPC command APIs.
 
 ---
 
