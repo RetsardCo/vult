@@ -127,8 +127,9 @@ impl StorageManager {
                 Ok(_) => return Ok(()),
                 Err(e) => {
                     attempts += 1;
-                    if attempts < 4 {
-                        std::thread::sleep(std::time::Duration::from_millis(25 * attempts));
+                    if attempts < 6 {
+                        let delay_ms = 25 * (1 << (attempts - 1).min(4));
+                        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
                     } else {
                         if fs::copy(from, to).is_ok() {
                             let _ = fs::remove_file(from);

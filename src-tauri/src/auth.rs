@@ -973,9 +973,10 @@ impl AuthManager {
         let data = state.data.as_mut().ok_or_else(|| "No vault data loaded in memory".to_string())?;
         data.entries.insert(0, entry);
         data.modified_at = chrono::Utc::now().to_rfc3339();
-        self.storage
-            .save_vault(data, &password, &self.crypto)
-            .map_err(|e| format!("Failed to save vault: {}", e))?;
+        if let Err(e) = self.storage.save_vault(data, &password, &self.crypto) {
+            data.entries.remove(0);
+            return Err(format!("Failed to save vault: {}", e));
+        }
 
         Ok(entry_id)
     }

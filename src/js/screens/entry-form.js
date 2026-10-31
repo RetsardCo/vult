@@ -97,7 +97,12 @@ export function initEntryFormScreen({
     existingEntryFields = entry.fields || {};
     if (entry.category === "recovery_code" && Array.isArray(entry.fields?.codes)) {
       entry.fields.codes.forEach(c => {
-        if (c && c.code) existingCodesMap.set(c.code.trim(), !!c.used);
+        if (c && c.code) {
+          const raw = c.code.trim();
+          existingCodesMap.set(raw, !!c.used);
+          const cleaned = cleanCodeLine(raw);
+          if (cleaned) existingCodesMap.set(cleaned, !!c.used);
+        }
       });
     }
     customFieldsList = entry.category === "custom" && entry.fields?.fields 
@@ -389,8 +394,16 @@ export function initEntryFormScreen({
 
       // Initialize dropdown selection for existing entries
       if (existingEntry && ef.code_type) {
-        const matched = CODE_FORMAT_PRESETS.find(p => p.id === ef.code_type || p.label === ef.code_type);
-        if (matched) {
+        const ct = ef.code_type.trim().toLowerCase();
+        const matched = CODE_FORMAT_PRESETS.find(p => 
+          p.id.toLowerCase() === ct || 
+          p.label.toLowerCase() === ct ||
+          p.label.toLowerCase().startsWith(ct) ||
+          ct.startsWith(p.label.toLowerCase()) ||
+          (ct.includes("generic") && p.id === "generic") ||
+          (ct.includes("2fa") && p.id === "generic" && !ct.includes("google"))
+        );
+        if (matched && matched.id !== "other") {
           codeTypeSelect.value = matched.id;
           customCodeInput.style.display = "none";
         } else {
@@ -403,7 +416,12 @@ export function initEntryFormScreen({
 
       function updateDetection(isInitial = false) {
         const text = codesArea.value;
-        const det = detectCodeType(text);
+        const currentService = serviceInput?.value || "";
+        const det = detectCodeType(text, currentService);
+
+        if (text.trim() === "") {
+          userManuallySelected = false;
+        }
 
         if (det.hasCodes) {
           detectionBadge.textContent = det.badgeText;
@@ -623,8 +641,10 @@ export function initEntryFormScreen({
     saveBtn.disabled = true;
     saveBtn.textContent = "Saving...";
 
+    let savedId = editEntryId;
+    let saveSucceeded = false;
+
     try {
-      let savedId = editEntryId;
       if (editEntryId) {
         await invokeCommand("update_entry", { entry: payload });
         showToast("Secret updated");
@@ -632,7 +652,7 @@ export function initEntryFormScreen({
         savedId = await invokeCommand("add_entry", { entry: payload });
         showToast("Secret saved to vault");
       }
-      onSaved(savedId || editEntryId);
+      saveSucceeded = true;
     } catch (err) {
       console.error("Save error:", err);
       const errMsg = err?.message || (typeof err === "string" ? err : "Failed to save secret");
@@ -641,6 +661,14 @@ export function initEntryFormScreen({
       isSaving = false;
       saveBtn.disabled = false;
       saveBtn.textContent = "Save";
+    }
+
+    if (saveSucceeded) {
+      try {
+        onSaved(savedId || editEntryId);
+      } catch (navErr) {
+        console.error("Navigation error after save:", navErr);
+      }
     }
   };
 

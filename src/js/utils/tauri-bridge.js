@@ -32,11 +32,12 @@ export async function invokeCommand(cmd, args = {}, timeoutMs = 15000) {
   }
 
   // 3. Timeout guard to guarantee UI never hangs indefinitely on stuck IPC calls
+  const effectiveTimeout = cmd === "unlock_with_windows_hello" ? Math.max(timeoutMs, 120000) : timeoutMs;
   let timerId = null;
   const timeoutPromise = new Promise((_, reject) => {
     timerId = setTimeout(() => {
-      reject(new Error(`Command "${cmd}" timed out after ${timeoutMs / 1000}s`));
-    }, timeoutMs);
+      reject(new Error(`Command "${cmd}" timed out after ${effectiveTimeout / 1000}s`));
+    }, effectiveTimeout);
   });
 
   try {
