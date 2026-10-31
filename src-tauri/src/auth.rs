@@ -239,6 +239,11 @@ impl AuthManager {
         let mut vault_data = VaultData::default();
         vault_data.settings.auth_mode = auth_mode.clone();
         vault_data.settings.pin_hash = None; // Never store plain PIN on disk!
+        vault_data.settings.pin_length = if auth_mode == "password_only" {
+            None
+        } else {
+            pin.as_ref().map(|p| p.len())
+        };
 
         let effective_pass = compute_effective_pass(&auth_mode, pin.as_deref(), &password);
 
@@ -426,6 +431,7 @@ impl AuthManager {
         let pin = state.active_pin.clone();
         let master = state.active_master_pwd.clone().unwrap_or_default();
 
+        let active_pin_len = state.active_pin.as_ref().map(|p| p.len());
         let new_effective = if mode_changed {
             compute_effective_pass(&new_settings.auth_mode, pin.as_deref(), &master)
         } else {
@@ -433,7 +439,13 @@ impl AuthManager {
         };
 
         if let Some(ref mut data) = state.data {
+            let preserved_pin_len = data.settings.pin_length.or(active_pin_len);
             data.settings = new_settings.clone();
+            if data.settings.pin_length.is_none() && new_settings.auth_mode != "password_only" {
+                data.settings.pin_length = preserved_pin_len;
+            } else if new_settings.auth_mode == "password_only" {
+                data.settings.pin_length = None;
+            }
             data.settings.pin_hash = None; // Never store plain PIN on disk
             data.modified_at = chrono::Utc::now().to_rfc3339();
             self.storage
@@ -471,6 +483,7 @@ impl AuthManager {
         let new_effective = compute_effective_pass(&config.auth_mode, Some(&new_pin), &master);
 
         if let Some(ref mut data) = state.data {
+            data.settings.pin_length = Some(new_pin.len());
             data.modified_at = chrono::Utc::now().to_rfc3339();
             self.storage
                 .save_vault(data, new_effective.as_bytes(), &self.crypto)
@@ -1128,16 +1141,37 @@ mod tests {
         let auth = AuthManager::new(storage, crypto);
 
         auth.setup_vault(Some("1111".to_string()), "Pass123".to_string(), "pin_and_password".to_string()).unwrap();
+        assert_eq!(auth.get_auth_settings().pin_length, Some(4));
 
-        // Change PIN to 2222
-        auth.change_pin("2222".to_string()).unwrap();
+        // Change PIN to 222222 (6 digits)
+        auth.change_pin("222222".to_string()).unwrap();
+        assert_eq!(auth.get_auth_settings().pin_length, Some(6));
         auth.lock();
 
         // Old PIN 1111 fails
         assert!(auth.unlock(Some("1111".to_string()), "Pass123".to_string()).is_err());
 
-        // New PIN 2222 succeeds
-        assert!(auth.unlock(Some("2222".to_string()), "Pass123".to_string()).is_ok());
+        // New PIN 222222 succeeds
+        assert!(auth.unlock(Some("222222".to_string()), "Pass123".to_string()).is_ok());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_dynamic_pin_length_persisted_in_config() {
+        let temp_dir = env::temp_dir().join(format!("vult_pin_cfg_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+        let auth = AuthManager::new(storage, crypto);
+
+        // Setup 4-digit PIN vault
+        auth.setup_vault(Some("4321".to_string()), "SecretPass".to_string(), "pin_only".to_string()).unwrap();
+        auth.lock();
+
+        // When locked, read_config should still reflect 4-digit PIN length for UI unlock rendering
+        let settings = auth.get_auth_settings();
+        assert_eq!(settings.pin_length, Some(4));
+        assert_eq!(settings.auth_mode, "pin_only");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

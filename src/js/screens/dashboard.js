@@ -22,20 +22,20 @@ export function initDashboardScreen({
         </div>
       </div>
       <div class="header-right">
-        <button id="dash-gen-btn" class="btn-icon" title="Password Generator">
+        <button id="dash-gen-btn" class="btn-icon" data-tooltip="Password Generator">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
             <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
             <line x1="12" y1="22.08" x2="12" y2="12"></line>
           </svg>
         </button>
-        <button id="dash-settings-btn" class="btn-icon" title="Settings">
+        <button id="dash-settings-btn" class="btn-icon" data-tooltip="Settings & Preferences">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
         </button>
-        <button id="dash-lock-btn" class="btn-icon" title="Lock Vault">
+        <button id="dash-lock-btn" class="btn-icon" data-tooltip="Lock Vault Immediately">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
@@ -53,7 +53,7 @@ export function initDashboardScreen({
           </svg>
         </div>
         <input type="text" id="dash-search" class="search-input" placeholder="Search secrets, services, tags...">
-        <button id="dash-search-clear" class="search-clear-btn">✕</button>
+        <button id="dash-search-clear" class="search-clear-btn" data-tooltip="Clear search">✕</button>
       </div>
 
       <div id="dash-categories-section">
@@ -71,7 +71,7 @@ export function initDashboardScreen({
       </div>
     </div>
 
-    <button id="dash-fab-btn" class="fab-btn" title="Add Secret">
+    <button id="dash-fab-btn" class="fab-btn" data-tooltip="Add New Secret">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="12" y1="5" x2="12" y2="19"></line>
         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -224,7 +224,7 @@ export function initDashboardScreen({
         </div>
         <div class="entry-item-actions">
           ${primarySecretToCopy ? `
-            <button class="btn-icon copy-quick-btn" title="Quick Copy">
+            <button class="btn-icon copy-quick-btn" data-tooltip="Copy to Clipboard">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>

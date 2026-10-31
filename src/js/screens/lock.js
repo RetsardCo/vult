@@ -46,14 +46,14 @@ export function initLockScreen({ onUnlocked }) {
 
           <div class="form-group" id="setup-pin-group">
             <label class="form-label">Create PIN (4-8 digits)</label>
-            <input type="password" id="setup-pin" class="input-text input-mono" placeholder="e.g. 123456" maxlength="8" pattern="[0-9]*" inputmode="numeric">
+            <input type="password" id="setup-pin" class="input-text input-mono" placeholder="e.g. 1234" maxlength="8" pattern="[0-9]*" inputmode="numeric">
           </div>
 
           <div class="form-group" id="setup-password-group">
             <label class="form-label">Master Password</label>
             <div class="password-input-group">
               <input type="password" id="setup-password" class="input-text" placeholder="Enter strong password">
-              <button class="password-toggle-btn" type="button">👁</button>
+              <button class="password-toggle-btn" type="button" data-tooltip="Show / Hide Password">👁</button>
             </div>
           </div>
 
@@ -154,6 +154,9 @@ export function initLockScreen({ onUnlocked }) {
     const hasPin = settings.auth_mode !== "password_only";
     const hasPassword = settings.auth_mode !== "pin_only";
     const hasWinHello = settings.windows_hello_enabled;
+    const pinLength = settings.pin_length && settings.pin_length >= 4 && settings.pin_length <= 8
+      ? settings.pin_length
+      : 6;
     enteredPin = "";
 
     container.innerHTML = `
@@ -169,21 +172,18 @@ export function initLockScreen({ onUnlocked }) {
             <div class="pin-wrapper">
               <div class="pin-label">PIN Code</div>
               <div class="pin-dots">
-                <div class="pin-dot" id="dot-0"></div>
-                <div class="pin-dot" id="dot-1"></div>
-                <div class="pin-dot" id="dot-2"></div>
-                <div class="pin-dot" id="dot-3"></div>
-                <div class="pin-dot" id="dot-4"></div>
-                <div class="pin-dot" id="dot-5"></div>
+                ${Array.from({ length: pinLength }, (_, i) => `
+                  <div class="pin-dot" id="dot-${i}"></div>
+                `).join("")}
               </div>
 
               <div class="pin-keypad">
                 ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `
                   <button type="button" class="pin-key" data-key="${n}">${n}</button>
                 `).join("")}
-                <button type="button" class="pin-key ghost" data-key="clear">✕</button>
+                <button type="button" class="pin-key ghost" data-key="clear" data-tooltip="Clear PIN">✕</button>
                 <button type="button" class="pin-key" data-key="0">0</button>
-                <button type="button" class="pin-key ghost" data-key="backspace">⌫</button>
+                <button type="button" class="pin-key ghost" data-key="backspace" data-tooltip="Delete last digit">⌫</button>
               </div>
             </div>
           ` : ""}
@@ -193,7 +193,7 @@ export function initLockScreen({ onUnlocked }) {
               <label class="form-label">Master Password</label>
               <div class="password-input-group">
                 <input type="password" id="unlock-password" class="input-text" placeholder="Enter master password">
-                <button class="password-toggle-btn" type="button">👁</button>
+                <button class="password-toggle-btn" type="button" data-tooltip="Show / Hide Password">👁</button>
               </div>
             </div>
           ` : ""}
@@ -207,7 +207,7 @@ export function initLockScreen({ onUnlocked }) {
 
             ${hasWinHello ? `
               <div class="auth-divider">or</div>
-              <button id="win-hello-btn" type="button" class="btn btn-win-hello">
+              <button id="win-hello-btn" type="button" class="btn btn-win-hello" data-tooltip="Unlock using Windows biometric or OS credentials">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M0 0h11v11H0zM13 0h11v11H13zM0 13h11v11H0zM13 13h11v11H13z"/>
                 </svg>
@@ -226,7 +226,7 @@ export function initLockScreen({ onUnlocked }) {
     const winHelloBtn = container.querySelector("#win-hello-btn");
 
     function updateDots() {
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < pinLength; i++) {
         const dot = container.querySelector(`#dot-${i}`);
         if (dot) {
           if (i < enteredPin.length) {
@@ -247,12 +247,12 @@ export function initLockScreen({ onUnlocked }) {
           enteredPin = "";
         } else if (key === "backspace") {
           enteredPin = enteredPin.slice(0, -1);
-        } else if (enteredPin.length < 8) {
+        } else if (enteredPin.length < pinLength) {
           enteredPin += key;
         }
         updateDots();
-        // Auto trigger unlock if PIN only and reached 4-6 digits
-        if (!hasPassword && (enteredPin.length === 6 || enteredPin.length === 8)) {
+        // Auto trigger unlock if PIN only and reached full configured PIN length
+        if (!hasPassword && enteredPin.length === pinLength) {
           triggerUnlock();
         }
       };
@@ -267,10 +267,10 @@ export function initLockScreen({ onUnlocked }) {
       }
       if (lockoutSecondsRemaining > 0) return;
       if (hasPin && /^[0-9]$/.test(e.key)) {
-        if (enteredPin.length < 8) {
+        if (enteredPin.length < pinLength) {
           enteredPin += e.key;
           updateDots();
-          if (!hasPassword && (enteredPin.length === 6 || enteredPin.length === 8)) {
+          if (!hasPassword && enteredPin.length === pinLength) {
             triggerUnlock();
           }
         }

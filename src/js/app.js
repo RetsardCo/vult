@@ -5,6 +5,7 @@ import { initEntryDetailScreen } from "./screens/entry-detail.js";
 import { initEntryFormScreen } from "./screens/entry-form.js";
 import { initGeneratorScreen } from "./screens/generator.js";
 import { initSettingsScreen } from "./screens/settings.js";
+import { initTooltipSystem } from "./components/tooltip.js";
 import { invokeCommand } from "./utils/tauri-bridge.js";
 
 class VultApp {
@@ -116,6 +117,9 @@ class VultApp {
       }
     });
 
+    // Initialize floating long-hover tooltip system
+    this.tooltipSystem = initTooltipSystem();
+
     // Start on lock screen
     this.showScreen("lock");
     this.lockCtrl.checkStatus();
@@ -125,6 +129,9 @@ class VultApp {
   }
 
   showScreen(name) {
+    if (this.tooltipSystem) {
+      this.tooltipSystem.hide();
+    }
     if (this.currentScreen && this.currentScreen !== name) {
       this.previousScreen = this.currentScreen;
     }

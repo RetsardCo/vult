@@ -9,6 +9,9 @@ pub struct AuthSettings {
     #[serde(default)]
     pub pin_hash: Option<String>,
 
+    #[serde(default)]
+    pub pin_length: Option<usize>,
+
     #[serde(default = "default_win_hello")]
     pub windows_hello_enabled: bool,
 
@@ -37,6 +40,7 @@ impl Default for AuthSettings {
         Self {
             auth_mode: default_auth_mode(),
             pin_hash: None,
+            pin_length: None,
             windows_hello_enabled: default_win_hello(),
             auto_lock_minutes: default_auto_lock(),
             clipboard_clear_seconds: default_clipboard_clear(),

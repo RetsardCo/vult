@@ -12,7 +12,7 @@ export function initGeneratorScreen({
   container.innerHTML = `
     <header class="app-header">
       <div class="header-left">
-        <button id="gen-back-btn" class="btn-icon" title="Back">
+        <button id="gen-back-btn" class="btn-icon" data-tooltip="Back">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6"></polyline>
           </svg>
@@ -20,7 +20,7 @@ export function initGeneratorScreen({
         <div class="header-title">Password Generator</div>
       </div>
       <div class="header-right">
-        <button id="gen-use-btn" class="btn btn-primary btn-sm" style="display:none;">Use</button>
+        <button id="gen-use-btn" class="btn btn-primary btn-sm" style="display:none;" data-tooltip="Insert password into active form">Use</button>
       </div>
     </header>
 
@@ -33,13 +33,13 @@ export function initGeneratorScreen({
         <div class="gen-display-actions">
           <span class="gen-strength-label" id="gen-strength-label">Strong</span>
           <div style="display:flex; gap:6px;">
-            <button id="gen-refresh-btn" class="btn-icon" title="Generate New">
+            <button id="gen-refresh-btn" class="btn-icon" data-tooltip="Generate New Password">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="23 4 23 10 17 10"></polyline>
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
               </svg>
             </button>
-            <button id="gen-copy-btn" class="btn btn-secondary btn-sm">Copy</button>
+            <button id="gen-copy-btn" class="btn btn-secondary btn-sm" data-tooltip="Copy Generated Password">Copy</button>
           </div>
         </div>
       </div>

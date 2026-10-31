@@ -14,7 +14,7 @@ export function initSettingsScreen({
   container.innerHTML = `
     <header class="app-header">
       <div class="header-left">
-        <button id="set-back-btn" class="btn-icon" title="Back">
+        <button id="set-back-btn" class="btn-icon" data-tooltip="Back to Dashboard">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6"></polyline>
           </svg>
@@ -27,7 +27,7 @@ export function initSettingsScreen({
       <div class="settings-group">
         <div class="section-title">Security & Unlock</div>
         <div class="settings-card">
-          <div class="settings-row">
+          <div class="settings-row" data-tooltip="Configure how you authenticate to unlock your vault">
             <div class="settings-row-label">
               <span class="settings-row-icon">🔐</span>
               <span>Auth Mode</span>
@@ -41,7 +41,7 @@ export function initSettingsScreen({
             </div>
           </div>
 
-          <div class="settings-row clickable" id="set-change-pin-row">
+          <div class="settings-row clickable" id="set-change-pin-row" data-tooltip="Change your 4-8 digit numeric PIN">
             <div class="settings-row-label">
               <span class="settings-row-icon">🔢</span>
               <span>Change PIN</span>
@@ -49,7 +49,7 @@ export function initSettingsScreen({
             <div class="settings-row-control">→</div>
           </div>
 
-          <div class="settings-row clickable" id="set-change-pwd-row">
+          <div class="settings-row clickable" id="set-change-pwd-row" data-tooltip="Change your Master Encryption Password">
             <div class="settings-row-label">
               <span class="settings-row-icon">🔑</span>
               <span>Change Master Password</span>
@@ -57,7 +57,7 @@ export function initSettingsScreen({
             <div class="settings-row-control">→</div>
           </div>
 
-          <div class="settings-row">
+          <div class="settings-row" data-tooltip="Enable Windows Hello biometric fingerprint, face, or OS PIN unlock">
             <div class="settings-row-label">
               <span class="settings-row-icon">🪟</span>
               <span>Windows Hello Unlock</span>
@@ -70,7 +70,7 @@ export function initSettingsScreen({
             </div>
           </div>
 
-          <div class="settings-row">
+          <div class="settings-row" data-tooltip="Automatically lock the vault after a period of user inactivity">
             <div class="settings-row-label">
               <span class="settings-row-icon">⏱️</span>
               <span>Auto-Lock After</span>
@@ -86,7 +86,7 @@ export function initSettingsScreen({
             </div>
           </div>
 
-          <div class="settings-row">
+          <div class="settings-row" data-tooltip="Clear copied passwords and sensitive secrets from clipboard after a delay">
             <div class="settings-row-label">
               <span class="settings-row-icon">📋</span>
               <span>Clipboard Auto-Clear</span>
@@ -106,7 +106,7 @@ export function initSettingsScreen({
       <div class="settings-group">
         <div class="section-title">Vault Backup & Data</div>
         <div class="settings-card">
-          <div class="settings-row clickable" id="set-export-row">
+          <div class="settings-row clickable" id="set-export-row" data-tooltip="Export authenticated encrypted vault backup file (.vult)">
             <div class="settings-row-label">
               <span class="settings-row-icon">💾</span>
               <span>Export Encrypted Backup</span>
@@ -114,7 +114,7 @@ export function initSettingsScreen({
             <div class="settings-row-control">→</div>
           </div>
 
-          <div class="settings-row clickable" id="set-import-row">
+          <div class="settings-row clickable" id="set-import-row" data-tooltip="Import an existing vault backup (.vult or JSON)">
             <div class="settings-row-label">
               <span class="settings-row-icon">📥</span>
               <span>Import Vault Backup</span>
@@ -127,7 +127,7 @@ export function initSettingsScreen({
       <div class="settings-group">
         <div class="section-title">Danger Zone</div>
         <div class="settings-card">
-          <div class="settings-row clickable" id="set-wipe-row">
+          <div class="settings-row clickable" id="set-wipe-row" data-tooltip="Permanently delete entire vault and all stored secrets">
             <div class="settings-row-label" style="color:var(--destructive);">
               <span class="settings-row-icon" style="color:var(--destructive);">⚠️</span>
               <span>Wipe All Data</span>
@@ -200,7 +200,10 @@ export function initSettingsScreen({
       return;
     }
     invokeCommand("change_pin", { newPin })
-      .then(() => showToast("PIN successfully updated"))
+      .then(() => {
+        showToast("PIN successfully updated");
+        currentSettings.pin_length = newPin.length;
+      })
       .catch(err => showToast(typeof err === "string" ? err : "Failed to update PIN", "error"));
   };
 
