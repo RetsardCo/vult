@@ -952,6 +952,10 @@ impl AuthManager {
             return Err("Vault is locked".to_string());
         }
 
+        if entry.title.trim().is_empty() {
+            return Err("Entry title cannot be empty".to_string());
+        }
+
         if entry.id.is_empty() {
             entry.id = uuid::Uuid::new_v4().to_string();
         }
@@ -966,13 +970,12 @@ impl AuthManager {
             .ok_or_else(|| "No active password in memory".to_string())?;
 
         let entry_id = entry.id.clone();
-        if let Some(ref mut data) = state.data {
-            data.entries.insert(0, entry);
-            data.modified_at = chrono::Utc::now().to_rfc3339();
-            self.storage
-                .save_vault(data, &password, &self.crypto)
-                .map_err(|e| format!("Failed to save vault: {}", e))?;
-        }
+        let data = state.data.as_mut().ok_or_else(|| "No vault data loaded in memory".to_string())?;
+        data.entries.insert(0, entry);
+        data.modified_at = chrono::Utc::now().to_rfc3339();
+        self.storage
+            .save_vault(data, &password, &self.crypto)
+            .map_err(|e| format!("Failed to save vault: {}", e))?;
 
         Ok(entry_id)
     }
@@ -984,29 +987,32 @@ impl AuthManager {
             return Err("Vault is locked".to_string());
         }
 
+        if entry.title.trim().is_empty() {
+            return Err("Entry title cannot be empty".to_string());
+        }
+
         let password = state
             .active_password
             .clone()
             .ok_or_else(|| "No active password in memory".to_string())?;
 
-        if let Some(ref mut data) = state.data {
-            if let Some(existing) = data.entries.iter_mut().find(|e| e.id == entry.id) {
-                existing.category = entry.category;
-                existing.title = entry.title;
-                existing.fields = entry.fields;
-                existing.notes = entry.notes;
-                existing.tags = entry.tags;
-                existing.favorite = entry.favorite;
-                existing.modified_at = chrono::Utc::now().to_rfc3339();
-            } else {
-                return Err("Entry to update not found".to_string());
-            }
-
-            data.modified_at = chrono::Utc::now().to_rfc3339();
-            self.storage
-                .save_vault(data, &password, &self.crypto)
-                .map_err(|e| format!("Failed to save vault: {}", e))?;
+        let data = state.data.as_mut().ok_or_else(|| "No vault data loaded in memory".to_string())?;
+        if let Some(existing) = data.entries.iter_mut().find(|e| e.id == entry.id) {
+            existing.category = entry.category;
+            existing.title = entry.title;
+            existing.fields = entry.fields;
+            existing.notes = entry.notes;
+            existing.tags = entry.tags;
+            existing.favorite = entry.favorite;
+            existing.modified_at = chrono::Utc::now().to_rfc3339();
+        } else {
+            return Err("Entry to update not found".to_string());
         }
+
+        data.modified_at = chrono::Utc::now().to_rfc3339();
+        self.storage
+            .save_vault(data, &password, &self.crypto)
+            .map_err(|e| format!("Failed to save vault: {}", e))?;
 
         Ok(())
     }
@@ -1835,4 +1841,70 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_add_entry_validation_and_persistence() {
+        let temp_dir = env::temp_dir().join(format!("vult_add_ent_{}", uuid::Uuid::new_v4()));
+        let storage = StorageManager::with_custom_dir(temp_dir.clone()).unwrap();
+        let crypto = CryptoEngine::fast_for_testing();
+        let auth = AuthManager::new(storage, crypto);
+
+        auth.setup_vault(Some("1234".to_string()), "MasterPass123!".to_string(), "pin_and_password".to_string()).unwrap();
+
+        // 1. Empty title should be rejected
+        let empty_title_entry = VaultEntry {
+            id: "".to_string(),
+            category: "recovery_code".to_string(),
+            title: "   ".to_string(),
+            fields: serde_json::json!({ "service": "Google", "codes": [] }),
+            notes: None,
+            tags: vec![],
+            favorite: false,
+            created_at: "".to_string(),
+            modified_at: "".to_string(),
+            accessed_at: "".to_string(),
+        };
+        let err = auth.add_entry(empty_title_entry).unwrap_err();
+        assert!(err.contains("title cannot be empty"));
+
+        // 2. Valid entry should be added successfully and return non-empty ID
+        let valid_entry = VaultEntry {
+            id: "".to_string(),
+            category: "recovery_code".to_string(),
+            title: "Google Backup Codes".to_string(),
+            fields: serde_json::json!({
+                "service": "Google",
+                "code_type": "Google 2FA Backup Codes",
+                "codes": [
+                    { "code": "1481 9401", "used": false },
+                    { "code": "3068 8178", "used": false }
+                ]
+            }),
+            notes: Some("Personal account".to_string()),
+            tags: vec!["google".to_string(), "2fa".to_string()],
+            favorite: true,
+            created_at: "".to_string(),
+            modified_at: "".to_string(),
+            accessed_at: "".to_string(),
+        };
+        let new_id = auth.add_entry(valid_entry).unwrap();
+        assert!(!new_id.is_empty());
+
+        // 3. Verify entry was persisted and can be retrieved
+        let fetched = auth.get_entry(&new_id).unwrap();
+        assert_eq!(fetched.title, "Google Backup Codes");
+        assert_eq!(fetched.category, "recovery_code");
+        assert_eq!(fetched.favorite, true);
+
+        // 4. Update entry
+        let mut updated = fetched.clone();
+        updated.title = "Updated Google Codes".to_string();
+        auth.update_entry(updated).unwrap();
+
+        let refetched = auth.get_entry(&new_id).unwrap();
+        assert_eq!(refetched.title, "Updated Google Codes");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }
+

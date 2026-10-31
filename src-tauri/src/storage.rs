@@ -115,8 +115,30 @@ impl StorageManager {
             file.write_all(json.as_bytes())?;
             file.sync_all()?;
         }
-        fs::rename(&temp_path, &config_path)?;
+        Self::atomic_replace_file(&temp_path, &config_path)?;
         Ok(())
+    }
+
+    /// Resilient atomic replace with retries and fallback to handle Windows file locking / antivirus scanners
+    fn atomic_replace_file(from: &Path, to: &Path) -> Result<(), StorageError> {
+        let mut attempts = 0;
+        loop {
+            match fs::rename(from, to) {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    attempts += 1;
+                    if attempts < 4 {
+                        std::thread::sleep(std::time::Duration::from_millis(25 * attempts));
+                    } else {
+                        if fs::copy(from, to).is_ok() {
+                            let _ = fs::remove_file(from);
+                            return Ok(());
+                        }
+                        return Err(StorageError::IoError(e));
+                    }
+                }
+            }
+        }
     }
 
     /// Save encrypted vault using atomic write (write to tmp -> sync -> rename)
@@ -136,7 +158,7 @@ impl StorageManager {
             file.write_all(&encrypted_bytes)?;
             file.sync_all()?;
         }
-        fs::rename(&temp_path, &vault_path)?;
+        Self::atomic_replace_file(&temp_path, &vault_path)?;
 
         // Also update config.json with current auth settings
         self.write_config(&data.settings)?;

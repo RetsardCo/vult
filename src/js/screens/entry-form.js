@@ -1,6 +1,7 @@
 import { invokeCommand } from "../utils/tauri-bridge.js";
 import { CATEGORIES, getCategoryMeta } from "../utils/helpers.js";
 import { showToast } from "../components/toast.js";
+import { detectCodeType, extractCodes, CODE_FORMAT_PRESETS } from "../utils/code-detector.js";
 
 export function initEntryFormScreen({
   onBack,
@@ -13,6 +14,7 @@ export function initEntryFormScreen({
   let customFieldsList = [];
   let existingCodesMap = new Map();
   let existingEntryFields = {};
+  let isSaving = false;
 
   container.innerHTML = `
     <header class="app-header">
@@ -41,6 +43,9 @@ export function initEntryFormScreen({
   container.querySelector("#form-back-btn").onclick = onBack;
 
   function renderTypePicker() {
+    isSaving = false;
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save";
     typePicker.innerHTML = `
       <div style="font-size:var(--font-size-xs); font-weight:700; text-transform:uppercase; color:var(--text-secondary); margin-bottom:4px;">
         Choose Secret Category
@@ -69,6 +74,9 @@ export function initEntryFormScreen({
 
   function setupNew(preselectedCategory = null) {
     editEntryId = null;
+    isSaving = false;
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save";
     existingCodesMap.clear();
     existingEntryFields = {};
     customFieldsList = [{ label: "Key", value: "", is_secret: false }];
@@ -82,6 +90,9 @@ export function initEntryFormScreen({
   function setupEdit(entry) {
     editEntryId = entry.id;
     selectedCategory = entry.category;
+    isSaving = false;
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save";
     existingCodesMap.clear();
     existingEntryFields = entry.fields || {};
     if (entry.category === "recovery_code" && Array.isArray(entry.fields?.codes)) {
@@ -97,6 +108,9 @@ export function initEntryFormScreen({
 
   function setupFormForCategory(catKey, existingEntry = null) {
     selectedCategory = catKey;
+    isSaving = false;
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save";
     const meta = getCategoryMeta(catKey);
     typePicker.style.display = "none";
     fieldsContainer.style.display = "flex";
@@ -192,15 +206,22 @@ export function initEntryFormScreen({
       specificHtml = `
         <div class="form-group">
           <label class="form-label">Service / Platform</label>
-          <input type="text" id="f-service" class="input-text" placeholder="e.g. Discord, GitHub, Google" value="${ef.service || ""}">
+          <input type="text" id="f-service" class="input-text" placeholder="e.g. Google, Discord, GitHub" value="${ef.service || ""}">
         </div>
         <div class="form-group">
-          <label class="form-label">Code Format / Type</label>
-          <input type="text" id="f-code-type" class="input-text" placeholder="e.g. 2FA Backup Codes (xxxx-xxxx)" value="${ef.code_type || "2FA Backup Codes"}">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-xs);">
+            <label class="form-label" style="margin-bottom:0;">Code Format / Type</label>
+            <span id="code-detection-badge" class="detection-badge" style="display:none;"></span>
+          </div>
+          <select id="f-code-type-select" class="input-select">
+            ${CODE_FORMAT_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join("")}
+          </select>
+          <input type="text" id="f-custom-code-type" class="input-text" placeholder="Enter custom code name (e.g. University Portal, Work VPN, Router Pin)" style="display:none; margin-top:6px;" value="">
         </div>
         <div class="form-group">
-          <label class="form-label">Codes (Paste one per line)</label>
-          <textarea id="f-codes" class="input-textarea input-mono" placeholder="2dj4-xbtz\n39wa-j5w2\n...">${codesText}</textarea>
+          <label class="form-label">Codes (Paste one per line or full list)</label>
+          <textarea id="f-codes" class="input-textarea input-mono" style="min-height:130px;" placeholder="Paste codes here (e.g. 1. 1481 9401 or 2dj4-xbtz)...">${codesText}</textarea>
+          <div style="font-size:11px; color:var(--text-tertiary); margin-top:4px;">Auto-cleans numbered lists (1.), bullets, spaces, and multi-columns. Format is auto-detected.</div>
         </div>
       `;
     } else if (catKey === "product_key") {
@@ -355,6 +376,84 @@ export function initEntryFormScreen({
       };
     }
 
+    // Hook up recovery code auto-detection and custom selector
+    if (catKey === "recovery_code") {
+      const codesArea = fieldsContainer.querySelector("#f-codes");
+      const codeTypeSelect = fieldsContainer.querySelector("#f-code-type-select");
+      const customCodeInput = fieldsContainer.querySelector("#f-custom-code-type");
+      const detectionBadge = fieldsContainer.querySelector("#code-detection-badge");
+      const serviceInput = fieldsContainer.querySelector("#f-service");
+      const titleInput = fieldsContainer.querySelector("#f-title");
+
+      let userManuallySelected = false;
+
+      // Initialize dropdown selection for existing entries
+      if (existingEntry && ef.code_type) {
+        const matched = CODE_FORMAT_PRESETS.find(p => p.id === ef.code_type || p.label === ef.code_type);
+        if (matched) {
+          codeTypeSelect.value = matched.id;
+          customCodeInput.style.display = "none";
+        } else {
+          codeTypeSelect.value = "other";
+          customCodeInput.value = ef.code_type;
+          customCodeInput.style.display = "block";
+        }
+        userManuallySelected = true;
+      }
+
+      function updateDetection(isInitial = false) {
+        const text = codesArea.value;
+        const det = detectCodeType(text);
+
+        if (det.hasCodes) {
+          detectionBadge.textContent = det.badgeText;
+          detectionBadge.style.display = "inline-flex";
+
+          if (!userManuallySelected) {
+            codeTypeSelect.value = det.typeId;
+            if (det.typeId === "other") {
+              customCodeInput.style.display = "block";
+            } else {
+              customCodeInput.style.display = "none";
+            }
+          }
+
+          if (!isInitial) {
+            if (det.suggestedService && serviceInput && !serviceInput.value.trim()) {
+              serviceInput.value = det.suggestedService;
+            }
+            if (det.suggestedService && titleInput && !titleInput.value.trim()) {
+              titleInput.value = `${det.suggestedService} Backup Codes`;
+            }
+          }
+        } else {
+          detectionBadge.style.display = "none";
+          if (!userManuallySelected) {
+            codeTypeSelect.value = "generic";
+            customCodeInput.style.display = "none";
+          }
+        }
+      }
+
+      codeTypeSelect.onchange = (e) => {
+        userManuallySelected = true;
+        if (e.target.value === "other") {
+          customCodeInput.style.display = "block";
+          customCodeInput.focus();
+        } else {
+          customCodeInput.style.display = "none";
+        }
+      };
+
+      codesArea.oninput = () => {
+        updateDetection(false);
+      };
+
+      if (codesArea.value.trim()) {
+        updateDetection(true);
+      }
+    }
+
     // Hook up custom fields list
     if (catKey === "custom") {
       const rowsContainer = fieldsContainer.querySelector("#custom-fields-rows");
@@ -398,6 +497,8 @@ export function initEntryFormScreen({
   }
 
   saveBtn.onclick = async () => {
+    if (isSaving) return;
+
     const title = fieldsContainer.querySelector("#f-title")?.value.trim();
     if (!title) {
       showToast("Please enter a title", "error");
@@ -437,17 +538,32 @@ export function initEntryFormScreen({
         derivation_path: fieldsContainer.querySelector("#f-derivation")?.value.trim() || null
       };
     } else if (selectedCategory === "recovery_code") {
-      const rawCodes = fieldsContainer.querySelector("#f-codes")?.value.trim() || "";
-      const codeList = rawCodes.split("\n")
-        .map(c => c.trim())
-        .filter(Boolean)
-        .map(code => ({
-          code,
-          used: existingCodesMap.has(code) ? existingCodesMap.get(code) : false
-        }));
+      const rawCodes = fieldsContainer.querySelector("#f-codes")?.value || "";
+      const extracted = extractCodes(rawCodes);
+
+      if (extracted.length === 0) {
+        showToast("Please enter at least one recovery code", "error");
+        return;
+      }
+
+      const codeList = extracted.map(code => ({
+        code,
+        used: existingCodesMap.has(code) ? existingCodesMap.get(code) : false
+      }));
+
+      const selectVal = fieldsContainer.querySelector("#f-code-type-select")?.value;
+      let codeType = "2FA Backup Codes";
+      if (selectVal === "other") {
+        const customVal = fieldsContainer.querySelector("#f-custom-code-type")?.value.trim();
+        codeType = customVal || "Other";
+      } else {
+        const preset = CODE_FORMAT_PRESETS.find(p => p.id === selectVal);
+        codeType = preset ? preset.label : "2FA Backup Codes";
+      }
+
       fields = {
         service: fieldsContainer.querySelector("#f-service")?.value.trim() || "",
-        code_type: fieldsContainer.querySelector("#f-code-type")?.value.trim() || "2FA Backup Codes",
+        code_type: codeType,
         codes: codeList
       };
     } else if (selectedCategory === "product_key") {
@@ -503,19 +619,26 @@ export function initEntryFormScreen({
       favorite: false
     };
 
+    isSaving = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
+
     try {
-      saveBtn.disabled = true;
-      saveBtn.textContent = "Saving...";
+      let savedId = editEntryId;
       if (editEntryId) {
         await invokeCommand("update_entry", { entry: payload });
         showToast("Secret updated");
       } else {
-        await invokeCommand("add_entry", { entry: payload });
+        savedId = await invokeCommand("add_entry", { entry: payload });
         showToast("Secret saved to vault");
       }
-      onSaved(editEntryId);
+      onSaved(savedId || editEntryId);
     } catch (err) {
-      showToast(typeof err === "string" ? err : "Failed to save entry", "error");
+      console.error("Save error:", err);
+      const errMsg = err?.message || (typeof err === "string" ? err : "Failed to save secret");
+      showToast(errMsg, "error");
+    } finally {
+      isSaving = false;
       saveBtn.disabled = false;
       saveBtn.textContent = "Save";
     }

@@ -1,15 +1,55 @@
-// Tauri IPC Bridge with safe fallback for browser testing
-export async function invokeCommand(cmd, args = {}) {
-  if (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === "function") {
-    return await window.__TAURI__.core.invoke(cmd, args);
+// Tauri IPC Bridge with safe fallback for browser testing and timeout protection
+export async function invokeCommand(cmd, args = {}, timeoutMs = 15000) {
+  let invoker = null;
+
+  // 1. Check window.__TAURI__ variants (Tauri v2 core, Tauri v1, Tauri internals)
+  if (typeof window !== "undefined") {
+    if (window.__TAURI__?.core?.invoke && typeof window.__TAURI__.core.invoke === "function") {
+      invoker = window.__TAURI__.core.invoke;
+    } else if (window.__TAURI__?.invoke && typeof window.__TAURI__.invoke === "function") {
+      invoker = window.__TAURI__.invoke;
+    } else if (window.__TAURI_INTERNALS__?.invoke && typeof window.__TAURI_INTERNALS__.invoke === "function") {
+      invoker = window.__TAURI_INTERNALS__.invoke;
+    }
   }
-  // Try dynamic import if Tauri bundle
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    return await invoke(cmd, args);
-  } catch (err) {
-    console.warn(`[Tauri Bridge] Falling back or failed invoking "${cmd}":`, err);
+
+  // 2. Try dynamic import if Tauri bundle with package bundler
+  if (!invoker) {
+    try {
+      const api = await import("@tauri-apps/api/core");
+      if (api && typeof api.invoke === "function") {
+        invoker = api.invoke;
+      }
+    } catch (_) {
+      // Dynamic import not available
+    }
+  }
+
+  if (!invoker) {
+    const err = new Error(`Tauri IPC not available. Cannot execute command "${cmd}".`);
+    console.warn(`[Tauri Bridge] ${err.message}`);
     throw err;
+  }
+
+  // 3. Timeout guard to guarantee UI never hangs indefinitely on stuck IPC calls
+  let timerId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timerId = setTimeout(() => {
+      reject(new Error(`Command "${cmd}" timed out after ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([
+      invoker(cmd, args),
+      timeoutPromise
+    ]);
+    return result;
+  } catch (err) {
+    console.error(`[Tauri Bridge] Command "${cmd}" failed:`, err);
+    throw (typeof err === "string" ? new Error(err) : err);
+  } finally {
+    if (timerId) clearTimeout(timerId);
   }
 }
 
