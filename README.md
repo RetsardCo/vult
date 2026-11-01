@@ -1,11 +1,15 @@
-# 🔐 Vult — Compact Personal Secret Manager
+<div align="center">
+  <img src="src/assets/logo.png" width="96" height="96" alt="Vult Logo" />
+  <h1>Vult</h1>
+  <p><strong>Personal Secret Manager — Local-first encrypted compact desktop app</strong></p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Framework](https://img.shields.io/badge/Tauri-v2-24C8D8.svg?logo=tauri&logoColor=white)](https://tauri.app/)
-[![Backend](https://img.shields.io/badge/Rust-1.99+-DEA584.svg?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![Security](https://img.shields.io/badge/Encryption-AES--256--GCM-green.svg)](#security-architecture)
-[![KDF](https://img.shields.io/badge/KDF-Argon2id-blueviolet.svg)](#security-architecture)
-[![Docs](https://img.shields.io/badge/Documentation-Full%20Guide-orange.svg)](DOCUMENTATION.md)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+  [![Framework](https://img.shields.io/badge/Tauri-v2-24C8D8.svg?logo=tauri&logoColor=white)](https://tauri.app/)
+  [![Backend](https://img.shields.io/badge/Rust-1.99+-DEA584.svg?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+  [![Security](https://img.shields.io/badge/Encryption-AES--256--GCM-green.svg)](#security-architecture)
+  [![KDF](https://img.shields.io/badge/KDF-Argon2id-blueviolet.svg)](#security-architecture)
+  [![Docs](https://img.shields.io/badge/Documentation-Full%20Guide-orange.svg)](DOCUMENTATION.md)
+</div>
 
 > **Vult** is a high-security, local-first personal secret manager desktop application engineered with a compact footprint (400 × 620 px), macOS-inspired dark ergonomics, and military-grade encryption.
 >

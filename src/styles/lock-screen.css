@@ -23,18 +23,27 @@
 }
 
 .auth-logo {
-  width: 64px;
-  height: 64px;
+  width: 68px;
+  height: 68px;
   border-radius: 18px;
   background: linear-gradient(135deg, #1C3E68 0%, #0F2038 100%);
-  border: 1px solid rgba(10, 132, 255, 0.35);
-  box-shadow: 0 8px 24px rgba(10, 132, 255, 0.22);
+  border: 1px solid rgba(10, 132, 255, 0.4);
+  box-shadow: 0 8px 28px rgba(10, 132, 255, 0.32), 0 0 14px rgba(10, 132, 255, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
   margin-bottom: var(--space-sm);
-  color: var(--accent);
+  flex-shrink: 0;
+  transition: transform var(--duration-fast) var(--ease), box-shadow var(--duration-fast) var(--ease);
+}
+
+.auth-logo-img {
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+  pointer-events: none;
+  user-select: none;
 }
 
 .auth-title {

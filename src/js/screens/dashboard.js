@@ -17,7 +17,7 @@ export function initDashboardScreen({
     <header class="app-header">
       <div class="header-left">
         <div class="header-title">
-          <span class="brand-icon">🔐</span>
+          <img src="assets/logo.png" alt="Vult" class="brand-logo-small">
           <span>Vult</span>
         </div>
       </div>

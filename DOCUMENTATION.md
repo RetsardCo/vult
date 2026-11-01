@@ -1,4 +1,7 @@
-# 📘 Vult Technical & Architectural Documentation
+<div align="center">
+  <img src="src/assets/logo.png" width="96" height="96" alt="Vult Logo" />
+  <h1>Vult Technical & Architectural Documentation</h1>
+</div>
 
 > **Vult** — A high-security, local-first personal secret manager desktop application engineered with a compact 400 × 620 px footprint, macOS-inspired ergonomics, and military-grade authenticated encryption.
 

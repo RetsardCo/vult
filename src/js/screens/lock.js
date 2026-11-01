@@ -30,7 +30,9 @@ export function initLockScreen({ onUnlocked }) {
     container.innerHTML = `
       <div class="auth-container">
         <div class="auth-header">
-          <div class="auth-logo">🔐</div>
+          <div class="auth-logo">
+            <img src="assets/logo.png" alt="Vult Logo" class="auth-logo-img">
+          </div>
           <div class="auth-title">Vult</div>
           <div class="auth-subtitle">Create Your Secure Vault</div>
         </div>
@@ -163,7 +165,9 @@ export function initLockScreen({ onUnlocked }) {
     container.innerHTML = `
       <div class="auth-container">
         <div class="auth-header">
-          <div class="auth-logo">🔐</div>
+          <div class="auth-logo">
+            <img src="assets/logo.png" alt="Vult Logo" class="auth-logo-img">
+          </div>
           <div class="auth-title">Vult</div>
           <div class="auth-subtitle">Enter credentials to unlock</div>
         </div>
