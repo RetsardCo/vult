@@ -151,7 +151,10 @@ pub async fn export_vault_save_dialog(
         .add_filter("Vult Encrypted Backup (*.vult)", &["vult"])
         .save_file();
 
-    if let Some(path) = file {
+    if let Some(mut path) = file {
+        if path.extension().is_none() {
+            path.set_extension("vult");
+        }
         std::fs::write(&path, &bytes).map_err(|e| format!("Failed to save backup: {}", e))?;
         Ok(Some(path.to_string_lossy().to_string()))
     } else {

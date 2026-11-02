@@ -469,6 +469,15 @@ html, body {
   font-weight: 500;
 }
 
+.password-input-group {
+  position: relative;
+  width: 100%;
+}
+
+.password-input-group .input-text {
+  padding-right: 40px;
+}
+
 .modal-form-group .password-input-group {
   margin-bottom: 0;
 }

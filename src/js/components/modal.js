@@ -190,15 +190,28 @@ export function showPinModal({
     };
 
     [newPinInput, confirmPinInput].forEach(inp => {
-      inp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          submitBtn.click();
-        }
-      });
       inp.addEventListener("input", () => {
+        inp.value = inp.value.replace(/\D/g, "");
         errorEl.style.display = "none";
       });
+    });
+
+    newPinInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (!confirmPinInput.value) {
+          confirmPinInput.focus();
+        } else {
+          submitBtn.click();
+        }
+      }
+    });
+
+    confirmPinInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitBtn.click();
+      }
     });
 
     setTimeout(() => newPinInput.focus(), 50);
@@ -307,13 +320,22 @@ export function showPasswordModal({
       cleanup(pwd);
     };
 
-    [newPwdInput, confirmPwdInput].forEach(inp => {
-      inp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
+    newPwdInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (!confirmPwdInput.value) {
+          confirmPwdInput.focus();
+        } else {
           submitBtn.click();
         }
-      });
+      }
+    });
+
+    confirmPwdInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitBtn.click();
+      }
     });
 
     setTimeout(() => newPwdInput.focus(), 50);
@@ -363,7 +385,7 @@ export function showBackupPasswordModal({
 
     submitBtn.onclick = () => {
       const val = pwdInput.value;
-      const password = val && val.trim() ? val.trim() : null;
+      const password = val && val.trim().length > 0 ? val : null;
       cleanup({ cancelled: false, password });
     };
 
