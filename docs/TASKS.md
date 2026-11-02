@@ -9,7 +9,9 @@
 
 - [x] **Git Tagging**: Tagged commit `c65c9b0` with release tag `v1.0.0`.
 - [x] **Backup Branch**: Created and pushed `v1.0.0-stable` branch to `origin/v1.0.0-stable` on GitHub.
-- [x] **Windows Installer Build**: Compiling release production installer via Tauri v2 bundler (`npm run build`).
+- [x] **Windows Installer Build**: Successfully bundled and produced release installers:
+  - MSI: `src-tauri/target/release/bundle/msi/Vult_1.0.0_x64_en-US.msi` (3.29 MiB)
+  - NSIS EXE: `src-tauri/target/release/bundle/nsis/Vult_1.0.0_x64-setup.exe` (2.52 MiB)
 - [x] **Documentation Freeze**: Created `docs/` repository standard (`PRD.md`, `ARCHITECTURE.md`, `RULES.md`, `DESIGN.md`, `TASKS.md`, `MEMORY.md`).
 
 ---
