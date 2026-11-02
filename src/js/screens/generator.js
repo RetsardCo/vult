@@ -121,7 +121,7 @@ export function initGeneratorScreen({
     let upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
     let lower = "abcdefghijkmnopqrstuvwxyz";
     let nums = "23456789";
-    let syms = "!@#$%^&*()-_=+[]{}|;:,.<>?";
+    let syms = "!@#$%^&*()-_=+";
 
     if (!optAmbig.checked) {
       upper += "IO";

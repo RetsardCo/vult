@@ -86,8 +86,25 @@
 }
 
 .about-logo {
-  font-size: 32px;
-  margin-bottom: var(--space-xs);
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #1C3E68 0%, #0F2038 100%);
+  border: 1px solid rgba(10, 132, 255, 0.4);
+  box-shadow: 0 6px 20px rgba(10, 132, 255, 0.28), 0 0 10px rgba(10, 132, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--space-sm) auto;
+}
+
+.about-logo-img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+  pointer-events: none;
+  user-select: none;
 }
 
 .about-title {
@@ -99,7 +116,15 @@
 .about-version {
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
-  margin-bottom: var(--space-xs);
+  margin-bottom: 2px;
+}
+
+.about-author {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--accent);
+  margin-bottom: var(--space-sm);
+  letter-spacing: 0.3px;
 }
 
 .about-desc {

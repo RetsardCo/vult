@@ -138,9 +138,12 @@ export function initSettingsScreen({
       </div>
 
       <div class="about-box">
-        <div class="about-logo">🔐</div>
+        <div class="about-logo">
+          <img src="assets/logo.png" alt="Vult Logo" class="about-logo-img">
+        </div>
         <div class="about-title">Vult</div>
         <div class="about-version">Version 1.0.0 • Local-First Vault</div>
+        <div class="about-author">Developed by Kurados</div>
         <div class="about-desc">
           Protected by AES-256-GCM authenticated encryption and Argon2id key derivation. No analytics, no cloud telemetry.
         </div>
