@@ -1,6 +1,6 @@
 import { invokeCommand } from "../utils/tauri-bridge.js";
 import { showToast } from "../components/toast.js";
-import { showConfirmModal } from "../components/modal.js";
+import { showConfirmModal, showPinModal, showPasswordModal, showBackupPasswordModal } from "../components/modal.js";
 
 export function initSettingsScreen({
   onBack,
@@ -171,9 +171,12 @@ export function initSettingsScreen({
   async function saveUpdatedSettings() {
     const newMode = authModeSelect.value;
     if (newMode !== "password_only" && currentSettings.auth_mode === "password_only" && !currentSettings.pin_length) {
-      const pin = prompt("Enter a 4-8 digit numeric PIN for the new authentication mode:");
-      if (!pin || !/^\d{4,8}$/.test(pin)) {
-        showToast("A valid 4 to 8 digit PIN is required", "error");
+      const pin = await showPinModal({
+        title: "Set PIN",
+        subtitle: "Enter a 4 to 8 digit numeric PIN for the new authentication mode.",
+        confirmText: "Set PIN"
+      });
+      if (!pin) {
         authModeSelect.value = currentSettings.auth_mode || "password_only";
         return;
       }
@@ -210,57 +213,47 @@ export function initSettingsScreen({
   clipSelect.onchange = saveUpdatedSettings;
 
   // Change PIN modal
-  container.querySelector("#set-change-pin-row").onclick = () => {
-    const newPin = prompt("Enter new 4-8 digit numeric PIN:");
+  container.querySelector("#set-change-pin-row").onclick = async () => {
+    const newPin = await showPinModal({
+      title: "Change PIN",
+      subtitle: "Enter a 4 to 8 digit numeric PIN.",
+      confirmText: "Update PIN"
+    });
     if (!newPin) return;
-    if (!/^\d{4,8}$/.test(newPin)) {
-      showToast("PIN must be 4 to 8 digits", "error");
-      return;
+
+    try {
+      await invokeCommand("change_pin", { newPin });
+      showToast("PIN successfully updated");
+      currentSettings.pin_length = newPin.length;
+    } catch (err) {
+      showToast(typeof err === "string" ? err : "Failed to update PIN", "error");
     }
-    invokeCommand("change_pin", { newPin })
-      .then(() => {
-        showToast("PIN successfully updated");
-        currentSettings.pin_length = newPin.length;
-      })
-      .catch(err => showToast(typeof err === "string" ? err : "Failed to update PIN", "error"));
   };
 
   // Change Password modal
-  container.querySelector("#set-change-pwd-row").onclick = () => {
-    const newPassword = prompt("Enter new Master Password (min 6 characters):");
+  container.querySelector("#set-change-pwd-row").onclick = async () => {
+    const newPassword = await showPasswordModal({
+      title: "Change Master Password",
+      subtitle: "Enter your new Master Password (minimum 6 characters).",
+      confirmText: "Update Password"
+    });
     if (!newPassword) return;
-    if (newPassword.length < 6) {
-      showToast("Password must be at least 6 characters", "error");
-      return;
+
+    try {
+      await invokeCommand("change_password", { newPassword });
+      showToast("Master Password updated");
+    } catch (err) {
+      showToast(typeof err === "string" ? err : "Failed to update password", "error");
     }
-    const confirm = prompt("Confirm new Master Password:");
-    if (confirm !== newPassword) {
-      showToast("Passwords do not match", "error");
-      return;
-    }
-    invokeCommand("change_password", { newPassword })
-      .then(() => showToast("Master Password updated"))
-      .catch(err => showToast(typeof err === "string" ? err : "Failed to update password", "error"));
   };
 
-  // Export
+  // Export with native Windows Save As dialog
   container.querySelector("#set-export-row").onclick = async () => {
     try {
-      const exportB64 = await invokeCommand("export_vault_encrypted");
-      const byteChars = atob(exportB64);
-      const byteNumbers = new Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) {
-        byteNumbers[i] = byteChars.charCodeAt(i);
+      const savedPath = await invokeCommand("export_vault_save_dialog");
+      if (savedPath) {
+        showToast(`Backup saved to ${savedPath}`);
       }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: "application/octet-stream" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `vult-backup-${new Date().toISOString().slice(0, 10)}.vult`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast("Encrypted backup exported (.vult)");
     } catch (e) {
       showToast(typeof e === "string" ? e : "Export failed", "error");
     }
@@ -301,10 +294,10 @@ export function initSettingsScreen({
             }
             const b64Data = btoa(binary);
 
-            const pwdPrompt = prompt("Enter password for this backup (Leave blank to use current Master Password):");
-            const backupPassword = pwdPrompt && pwdPrompt.trim() ? pwdPrompt.trim() : null;
+            const result = await showBackupPasswordModal();
+            if (!result || result.cancelled) return;
 
-            await invokeCommand("import_vault_data", { data: b64Data, password: backupPassword });
+            await invokeCommand("import_vault_data", { data: b64Data, password: result.password });
             showToast("Encrypted backup imported successfully");
             loadSettings();
           } catch (err) {

@@ -137,6 +137,29 @@ pub async fn export_vault_encrypted(
 }
 
 #[tauri::command]
+pub async fn export_vault_save_dialog(
+    auth: State<'_, Arc<AuthManager>>,
+) -> Result<Option<String>, String> {
+    let export_b64 = auth.export_vault_encrypted()?;
+    let bytes = crate::auth::base64_decode(&export_b64)?;
+
+    let default_name = format!("vult-backup-{}.vult", chrono::Utc::now().format("%Y-%m-%d"));
+
+    let file = rfd::FileDialog::new()
+        .set_title("Save Encrypted Vault Backup")
+        .set_file_name(&default_name)
+        .add_filter("Vult Encrypted Backup (*.vult)", &["vult"])
+        .save_file();
+
+    if let Some(path) = file {
+        std::fs::write(&path, &bytes).map_err(|e| format!("Failed to save backup: {}", e))?;
+        Ok(Some(path.to_string_lossy().to_string()))
+    } else {
+        Ok(None) // User canceled the dialog
+    }
+}
+
+#[tauri::command]
 pub async fn export_vault_data(
     auth: State<'_, Arc<AuthManager>>,
 ) -> Result<String, String> {

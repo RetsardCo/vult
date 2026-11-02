@@ -37,6 +37,7 @@ pub fn run() {
             commands::delete_entry,
             commands::toggle_code_used,
             commands::export_vault_encrypted,
+            commands::export_vault_save_dialog,
             commands::export_vault_data,
             commands::import_vault_data,
             commands::wipe_vault,

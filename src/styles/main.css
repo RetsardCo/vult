@@ -452,6 +452,75 @@ html, body {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+/* Modal Form Groups & Controls */
+.modal-form-group {
+  margin-bottom: var(--space-md);
+  text-align: left;
+}
+
+.modal-form-group label {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2xs);
+  font-weight: 500;
+}
+
+.modal-form-group .password-input-group {
+  margin-bottom: 0;
+}
+
+.modal-error {
+  color: var(--destructive);
+  font-size: var(--font-size-xs);
+  margin-bottom: var(--space-md);
+  text-align: left;
+  min-height: 16px;
+  background: var(--destructive-bg);
+  border: 1px solid rgba(255, 69, 58, 0.25);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+
+.modal-entropy-bar {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--border-subtle);
+  overflow: hidden;
+  position: relative;
+  margin-top: 6px;
+}
+
+.modal-entropy-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: var(--radius-full);
+  transition: width 0.2s ease, background-color 0.2s ease;
+}
+
+.modal-entropy-fill.weak {
+  width: 25%;
+  background-color: var(--destructive);
+}
+
+.modal-entropy-fill.fair {
+  width: 50%;
+  background-color: var(--warning);
+}
+
+.modal-entropy-fill.good {
+  width: 75%;
+  background-color: #32D74B;
+}
+
+.modal-entropy-fill.strong {
+  width: 100%;
+  background-color: var(--success);
+  box-shadow: 0 0 8px rgba(48, 209, 88, 0.4);
 }
 
 /* Toasts */
