@@ -11,58 +11,58 @@
   [![Docs](https://img.shields.io/badge/Documentation-Full%20Guide-orange.svg)](DOCUMENTATION.md)
 </div>
 
-> **Vult** is a high-security, local-first personal secret manager desktop application engineered with a compact footprint (400 × 620 px), macOS-inspired dark ergonomics, and military-grade encryption.
+> **Vult** is a high-security, local-first personal secret manager desktop application engineered with a compact footprint (400 x 620 px), macOS-inspired dark ergonomics, and authenticated encryption.
 >
-> 📖 **Read the [Complete Technical & Architectural Documentation](DOCUMENTATION.md)** for exhaustive details on the crypto engine, DPAPI token protection, schemas, and IPC command APIs.
+> Read the **[Complete Technical & Architectural Documentation](DOCUMENTATION.md)** for details on the crypto engine, DPAPI token protection, schemas, and IPC command APIs.
 
 ---
 
-## ✨ Highlights
+## Highlights
 
-- 📐 **Compact 400 × 620 Desktop Size**: Optimized for instant access alongside active windows (inspired by the Windows 11 Clock utility).
-- 🛡️ **Zero-Cloud & Local-First**: Your data lives exclusively on your machine in an authenticated, encrypted binary format. Zero telemetry, zero external network requests.
-- 🔑 **10 Dedicated Secret Categories**: From standard logins to BIP-39 seed phrases, developer SSH keys, and single-use 2FA recovery codes.
-- ⚡ **Lightning Fast & Lightweight**: Powered by Tauri v2 with a native Rust security core and sleek, vanilla web UI.
-- 🔒 **Defense-in-Depth Authentication**: Multi-mode unlock (PIN only, Master Password only, or PIN + Master Password) with optional Windows Hello biometric integration.
-- 📋 **Clipboard Protection**: Automatic clipboard wiping after 30 seconds to prevent accidental leaks.
-- 🎲 **Built-in Password Generator**: Cryptographically secure customizable password generator with visual entropy indicators.
-- 💥 **Crash-Safe Atomic Storage**: All writes execute atomically via temp files and OS-level sync, ensuring vault files cannot be corrupted even during sudden power failure.
-
----
-
-## 🗂️ 10 Supported Secret Categories
-
-| Category | Icon | Specialized Capabilities | Fields |
-|---|:---:|---|---|
-| **Login Credentials** | 🔑 | Password reveal/copy, quick generation | URL, Username, Email, Password, TOTP Secret, Notes |
-| **API Keys & Tokens** | 🔌 | Masked keys & endpoints | Service, Key Name, Key Value, Secret, Endpoint, Expiry |
-| **Seed Phrases** | 🌱 | Interactive 12 or 24-word numbered grid | Wallet Name, Mnemonic Words[], Passphrase, Derivation Path |
-| **Recovery Codes** | 🛟 | Single-use strike-through tracking & "Copy Remaining" | Service, Code Format (Discord `xxxx-xxxx`, Google, Unity, etc.), Codes[] |
-| **Product & License Keys** | 🏷️ | Formatted license keys & activation links | Software Name, Serial Key, Activation URL, Purchase Date, Expiry |
-| **Secure Notes** | 📝 | Multi-line confidential scratchpad | Title, Content, Tags, Notes |
-| **SSH & PGP Keys** | 🗝️ | Formatted key blocks & fingerprints | Key Name, Type (Ed25519/RSA), Private Key, Public Key, Passphrase |
-| **Wi-Fi Passwords** | 📶 | Quick SSID & protocol lookup | Network SSID, Security Protocol (WPA3, WPA2, etc.), Password |
-| **Payment Cards** | 💳 | Card formatting & CVV reveal protection | Cardholder, Card Number, Expiry (MM/YY), CVV, Billing Address |
-| **Custom Secrets** | ⚙️ | Dynamic arbitrary key-value pairs | Title, Dynamic Custom Fields (with individual secret masking) |
+- **Compact 400 x 620 Desktop Size**: Optimized for instant access alongside active windows.
+- **Zero-Cloud & Local-First**: Your data lives exclusively on your machine in an authenticated, encrypted binary format. Zero telemetry, zero external network requests.
+- **10 Dedicated Secret Categories**: From standard logins to BIP-39 seed phrases, developer SSH keys, and single-use 2FA recovery codes.
+- **Fast & Lightweight**: Powered by Tauri v2 with a native Rust security core and sleek, vanilla web UI.
+- **Defense-in-Depth Authentication**: Multi-mode unlock (PIN only, Master Password only, or PIN + Master Password) with optional Windows Hello biometric integration.
+- **Clipboard Protection**: Automatic clipboard wiping after 30 seconds to prevent accidental leaks.
+- **Built-in Password Generator**: Cryptographically secure customizable password generator with visual entropy indicators.
+- **Crash-Safe Atomic Storage**: All writes execute atomically via temp files and OS-level sync, ensuring vault files cannot be corrupted even during sudden power failure.
 
 ---
 
-## 🔒 Security Architecture
+## 10 Supported Secret Categories
+
+| Category | Specialized Capabilities | Fields |
+|---|---|---|
+| **Login Credentials** | Password reveal/copy, quick generation | URL, Username, Email, Password, TOTP Secret, Notes |
+| **API Keys & Tokens** | Masked keys & endpoints | Service, Key Name, Key Value, Secret, Endpoint, Expiry |
+| **Seed Phrases** | Interactive 12 or 24-word numbered grid | Wallet Name, Mnemonic Words[], Passphrase, Derivation Path |
+| **Recovery Codes** | Single-use strike-through tracking & "Copy Remaining" | Service, Code Format (Discord `xxxx-xxxx`, Google, Unity, etc.), Codes[] |
+| **Product & License Keys** | Formatted license keys & activation links | Software Name, Serial Key, Activation URL, Purchase Date, Expiry |
+| **Secure Notes** | Multi-line confidential scratchpad | Title, Content, Tags, Notes |
+| **SSH & PGP Keys** | Formatted key blocks & fingerprints | Key Name, Type (Ed25519/RSA), Private Key, Public Key, Passphrase |
+| **Wi-Fi Passwords** | Quick SSID & protocol lookup | Network SSID, Security Protocol (WPA3, WPA2, etc.), Password |
+| **Payment Cards** | Card formatting & CVV reveal protection | Cardholder, Card Number, Expiry (MM/YY), CVV, Billing Address |
+| **Custom Secrets** | Dynamic arbitrary key-value pairs | Title, Dynamic Custom Fields (with individual secret masking) |
+
+---
+
+## Security Architecture
 
 ```
 User Master Password + Salt (16B CSPRNG)
                 │
                 ▼
-      [ Argon2id KDF ]
-      Memory: 64 MiB (65,536 KiB)
-      Iterations: 3
-      Parallelism: 1 lane
+       [ Argon2id KDF ]
+       Memory: 64 MiB (65,536 KiB)
+       Iterations: 3
+       Parallelism: 1 lane
                 │
                 ▼
        256-bit Derived Key
                 │
                 ▼
-      [ AES-256-GCM AEAD ]  ◄── Nonce (12B CSPRNG)
+       [ AES-256-GCM AEAD ]  ◄── Nonce (12B CSPRNG)
                 │
                 ▼
 ┌────────────────────────────────────────────────────────┐
@@ -80,7 +80,7 @@ User Master Password + Salt (16B CSPRNG)
 
 ---
 
-## 🛠️ Development & Building
+## Development & Building
 
 ### Prerequisites
 
@@ -122,6 +122,6 @@ The compiled installer and standalone executable will be located in `src-tauri/t
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).

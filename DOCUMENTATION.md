@@ -7,7 +7,7 @@
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
 1. [Executive Overview & Vision](#1-executive-overview--vision)
 2. [Threat Model & Security Principles](#2-threat-model--security-principles)
@@ -30,10 +30,10 @@
 
 ### Core Tenets
 
-- 📴 **100% Offline & Local-First**: No external telemetry, no cloud servers, no account registration. Your encrypted vault exists exclusively on your physical storage device.
-- 📐 **Compact Utility Footprint (400 × 620 px)**: Sized similarly to the native Windows 11 Clock utility, Vult stays unobtrusive beside active work windows rather than consuming an entire display.
-- 🗃️ **Universal Secret Storage**: Beyond simple username/password pairs, Vult natively supports single-use 2FA recovery codes (e.g., Discord, Unity, Google, GitHub), BIP-39 cryptocurrency seed phrases, API keys, software license keys, SSH keys, Wi-Fi passwords, and custom data.
-- 🛡️ **Defense-in-Depth Cryptography**: Implements authenticated symmetric encryption (**AES-256-GCM**) paired with memory-hard key derivation (**Argon2id**), hardware-backed Windows Hello access, and active in-RAM memory zeroization (**`zeroize`**).
+- **100% Offline & Local-First**: No external telemetry, no cloud servers, no account registration. Your encrypted vault exists exclusively on your physical storage device.
+- **Compact Utility Footprint (400 × 620 px)**: Sized similarly to the native Windows 11 Clock utility, Vult stays unobtrusive beside active work windows rather than consuming an entire display.
+- **Universal Secret Storage**: Beyond simple username/password pairs, Vult natively supports single-use 2FA recovery codes (e.g., Discord, Unity, Google, GitHub), BIP-39 cryptocurrency seed phrases, API keys, software license keys, SSH keys, Wi-Fi passwords, and custom data.
+- **Defense-in-Depth Cryptography**: Implements authenticated symmetric encryption (**AES-256-GCM**) paired with memory-hard key derivation (**Argon2id**), hardware-backed Windows Hello access, and active in-RAM memory zeroization (**`zeroize`**).
 
 ---
 
@@ -500,7 +500,9 @@ The output artifacts will be placed in:
 
 ---
 
-## 📄 License & Attribution
+## License & Attribution
 
 Vult is open-source software licensed under the **[MIT License](LICENSE)**.
 Created by the **RetsardCo** team. Repository: [https://github.com/RetsardCo/vult](https://github.com/RetsardCo/vult).
+
+
