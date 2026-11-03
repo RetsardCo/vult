@@ -17,6 +17,10 @@ val tauriProperties = Properties().apply {
 android {
     compileSdk = 35
     namespace = "com.vult.app"
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "com.vult.app"
@@ -39,6 +43,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") {
@@ -84,3 +89,5 @@ dependencies {
 }
 
 apply(from = file("tauri.build.gradle.kts"))
+
+

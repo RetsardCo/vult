@@ -78,7 +78,7 @@ abstract class BuildTask : DefaultTask() {
             logger.lifecycle("[BuildTask] Running $cargoCmd ${cargoArgs.joinToString(" ")}...")
             try {
                 execOperations.exec {
-                    workingDir(File(projectDir, "../../../src-tauri"))
+                    workingDir(File(projectDir, "../../.."))
                     executable(cargoCmd)
                     args(cargoArgs)
                 }.assertNormalExitValue()

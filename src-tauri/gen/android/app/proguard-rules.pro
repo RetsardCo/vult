@@ -19,3 +19,8 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# Preserve Tauri runtime and app classes for JNI binding
+-keep class app.tauri.** { *; }
+-keepclassmembers class app.tauri.** { *; }
+-keep class com.vult.app.** { *; }
+-keepclassmembers class com.vult.app.** { *; }
