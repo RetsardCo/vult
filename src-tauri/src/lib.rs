@@ -11,14 +11,34 @@ use std::sync::Arc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let storage = StorageManager::new().expect("Failed to initialize vault storage directory");
-    let crypto = CryptoEngine::default();
-    let auth_manager = Arc::new(AuthManager::new(storage, crypto));
-
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(auth_manager)
+        .plugin(tauri_plugin_clipboard_manager::init());
+
+    #[cfg(target_os = "android")]
+    let builder = builder.setup(|app| {
+        use tauri::Manager;
+        let data_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())) as Box<dyn std::error::Error>)?;
+        let storage = StorageManager::with_custom_dir(data_dir)
+            .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())) as Box<dyn std::error::Error>)?;
+        let crypto = CryptoEngine::default();
+        let auth_manager = Arc::new(AuthManager::new(storage, crypto));
+        app.manage(auth_manager);
+        Ok(())
+    });
+
+    #[cfg(not(target_os = "android"))]
+    let builder = {
+        let storage = StorageManager::new().expect("Failed to initialize vault storage directory");
+        let crypto = CryptoEngine::default();
+        let auth_manager = Arc::new(AuthManager::new(storage, crypto));
+        builder.manage(auth_manager)
+    };
+
+    builder
         .invoke_handler(tauri::generate_handler![
             commands::check_vault_exists,
             commands::setup_vault,

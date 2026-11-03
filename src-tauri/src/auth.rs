@@ -679,10 +679,10 @@ impl AuthManager {
         }
 
         let state = self.state.lock().unwrap();
-        if let Some(ref pwd) = state.active_password {
+        if let Some(ref _pwd) = state.active_password {
             #[cfg(target_os = "windows")]
             {
-                let effective_str = String::from_utf8_lossy(pwd).to_string();
+                let effective_str = String::from_utf8_lossy(_pwd).to_string();
                 let mut payload = HelloTokenPayload {
                     effective_pass: effective_str,
                     pin: state.active_pin.clone(),

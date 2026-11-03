@@ -156,7 +156,7 @@ export function initLockScreen({ onUnlocked }) {
   function renderUnlockView(settings) {
     const hasPin = settings.auth_mode !== "password_only";
     const hasPassword = settings.auth_mode !== "pin_only";
-    const hasWinHello = settings.windows_hello_enabled;
+    const hasWinHello = settings.windows_hello_enabled && !/android/i.test(navigator.userAgent);
     const pinLength = settings.pin_length && settings.pin_length >= 4 && settings.pin_length <= 8
       ? settings.pin_length
       : 6;

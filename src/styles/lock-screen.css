@@ -5,7 +5,7 @@
   align-items: center;
   justify-content: flex-start;
   height: 100%;
-  padding: 28px var(--space-xl) var(--space-lg);
+  padding: calc(28px + var(--safe-top, 0px)) calc(var(--space-xl) + var(--safe-right, 0px)) calc(var(--space-lg) + var(--safe-bottom, 0px)) calc(var(--space-xl) + var(--safe-left, 0px));
   text-align: center;
   overflow-y: auto;
 }

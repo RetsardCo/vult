@@ -57,7 +57,7 @@ export function initSettingsScreen({
             <div class="settings-row-control">→</div>
           </div>
 
-          <div class="settings-row" data-tooltip="Enable Windows Hello biometric fingerprint, face, or OS PIN unlock">
+          <div class="settings-row" id="set-win-hello-row" data-tooltip="Enable Windows Hello biometric fingerprint, face, or OS PIN unlock">
             <div class="settings-row-label">
               <span class="settings-row-icon">🪟</span>
               <span>Windows Hello Unlock</span>
@@ -166,6 +166,12 @@ export function initSettingsScreen({
       winHelloToggle.checked = !!currentSettings.windows_hello_enabled;
       autoLockSelect.value = String(currentSettings.auto_lock_minutes ?? 5);
       clipSelect.value = String(currentSettings.clipboard_clear_seconds ?? 30);
+
+      // Hide Windows Hello setting row on Android
+      if (/android/i.test(navigator.userAgent)) {
+        const helloRow = container.querySelector("#set-win-hello-row");
+        if (helloRow) helloRow.style.display = "none";
+      }
     } catch (e) {
       console.error("Failed to load settings:", e);
     }
@@ -196,7 +202,9 @@ export function initSettingsScreen({
     const updated = {
       ...currentSettings,
       auth_mode: newMode,
-      windows_hello_enabled: winHelloToggle.checked,
+      windows_hello_enabled: /android/i.test(navigator.userAgent)
+        ? (currentSettings.windows_hello_enabled ?? false)
+        : winHelloToggle.checked,
       auto_lock_minutes: parseInt(autoLockSelect.value, 10),
       clipboard_clear_seconds: parseInt(clipSelect.value, 10)
     };

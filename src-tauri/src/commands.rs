@@ -136,6 +136,7 @@ pub async fn export_vault_encrypted(
     auth.export_vault_encrypted()
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tauri::command]
 pub async fn export_vault_save_dialog(
     auth: State<'_, Arc<AuthManager>>,
@@ -160,6 +161,32 @@ pub async fn export_vault_save_dialog(
     } else {
         Ok(None) // User canceled the dialog
     }
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[tauri::command]
+pub async fn export_vault_save_dialog(
+    app: AppHandle,
+    auth: State<'_, Arc<AuthManager>>,
+) -> Result<Option<String>, String> {
+    use tauri::Manager;
+    let export_b64 = auth.export_vault_encrypted()?;
+    let bytes = crate::auth::base64_decode(&export_b64)?;
+
+    let default_name = format!("vult-backup-{}.vult", chrono::Utc::now().format("%Y-%m-%d"));
+
+    let target_dir = app
+        .path()
+        .document_dir()
+        .or_else(|_| app.path().download_dir())
+        .or_else(|_| app.path().app_data_dir())
+        .map_err(|e| format!("Failed to resolve export directory: {}", e))?;
+
+    std::fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create export directory: {}", e))?;
+    let path = target_dir.join(&default_name);
+    std::fs::write(&path, &bytes).map_err(|e| format!("Failed to save backup: {}", e))?;
+    Ok(Some(path.to_string_lossy().to_string()))
 }
 
 #[tauri::command]

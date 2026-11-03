@@ -71,6 +71,14 @@ impl StorageManager {
     }
 
     fn resolve_default_dir() -> Result<PathBuf, StorageError> {
+        #[cfg(target_os = "android")]
+        {
+            let user0 = PathBuf::from("/data/user/0/com.vult.app/files");
+            if user0.exists() || PathBuf::from("/data/user/0/com.vult.app").exists() {
+                return Ok(user0);
+            }
+            return Ok(PathBuf::from("/data/data/com.vult.app/files"));
+        }
         if let Some(proj_dirs) = ProjectDirs::from("com", "vult", "Vult") {
             Ok(proj_dirs.data_dir().to_path_buf())
         } else {
