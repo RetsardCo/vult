@@ -40,3 +40,5 @@ src-tauri/gen/android/.kotlin/
 src-tauri/gen/android/build/
 src-tauri/gen/android/app/build/
 src-tauri/gen/android/local.properties
+release_staging/
+

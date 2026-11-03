@@ -44,7 +44,7 @@ android {
         }
         getByName("release") {
             signingConfig = signingConfigs.getByName("debug")
-            isMinifyEnabled = true
+            isMinifyEnabled = false
             proguardFiles(
                 *fileTree(".") {
                   include("**/*.pro")
